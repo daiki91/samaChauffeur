@@ -11,7 +11,11 @@ class AuthOTPTests(TestCase):
         self.client = APIClient()
         self.phone = '+221770000001'
 
-    def test_otp_send_and_verify_creates_user_and_returns_tokens(self):
+    def test_otp_send_and_verify_marks_user_verified(self):
+        # register user first
+        resp = self.client.post('/api/auth/register/', {'username': 'u1', 'phone': self.phone, 'password': 'pw1234', 'role': 'CLIENT'}, format='json')
+        self.assertEqual(resp.status_code, 201)
+
         # send OTP
         resp = self.client.post('/api/auth/otp/send/', {'phone': self.phone}, format='json')
         self.assertEqual(resp.status_code, 200)
@@ -20,19 +24,23 @@ class AuthOTPTests(TestCase):
         otp = OTP.objects.filter(phone=self.phone).latest('created_at')
         self.assertIsNotNone(otp.code)
 
-        # verify
+        # verify -> should NOT return tokens, only mark phone_verified
         resp = self.client.post('/api/auth/otp/verify/', {'phone': self.phone, 'code': otp.code}, format='json')
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
-        self.assertIn('access', data)
-        self.assertIn('refresh', data)
+        self.assertNotIn('access', data)
+        self.assertNotIn('refresh', data)
 
-        # user created
+        # user flagged as verified
         user = User.objects.get(phone=self.phone)
-        self.assertEqual(user.role, 'CLIENT')
+        self.assertTrue(user.phone_verified)
 
     def test_otp_send_uses_twilio_when_configured(self):
         from unittest.mock import patch
+        # register user so OTPSend is allowed
+        resp = self.client.post('/api/auth/register/', {'username': 'u2', 'phone': self.phone, 'password': 'pw1234', 'role': 'CLIENT'}, format='json')
+        self.assertEqual(resp.status_code, 201)
+
         # configure TWILIO settings
         from django.conf import settings
         settings.TWILIO['ACCOUNT_SID'] = 'AC123'
@@ -90,4 +98,14 @@ class AuthOTPTests(TestCase):
         self.assertEqual(resp.status_code, 201)
         user = User.objects.get(phone='+221770000006')
         self.assertEqual(user.role, 'CHAUFFEUR')
+
+    def test_token_obtain_with_phone_and_password_returns_tokens(self):
+        # create user
+        user = User.objects.create_user(username='loginuser', phone='+221770000020', password='secretpw')
+        # token obtain with phone + password
+        resp = self.client.post('/api/auth/token/', {'phone': user.phone, 'password': 'secretpw'}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn('access', data)
+        self.assertIn('refresh', data)
 

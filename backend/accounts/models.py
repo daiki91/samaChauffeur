@@ -16,6 +16,8 @@ class User(AbstractUser):
         choices=[('fr', 'Français'), ('wo', 'Wolof')],
         default='fr'
     )
+    # Indicates whether the phone number has been verified via OTP during registration
+    phone_verified = models.BooleanField(default=False)
 
     USERNAME_FIELD = 'phone'
     REQUIRED_FIELDS = ['username']

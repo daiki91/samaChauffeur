@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { verifyOtp, setAuthToken } from '../../lib/api'
+import { verifyOtp } from '../../lib/api'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 export default function Verify() {
@@ -15,36 +15,12 @@ export default function Verify() {
     setLoading(true)
     setError(null)
     try {
-      const resp = await verifyOtp(phone, code)
-      const access = resp.data.access
-      const refresh = resp.data.refresh
-      localStorage.setItem('access', access)
-      localStorage.setItem('refresh', refresh)
-      setAuthToken(access)
-
-      // refresh user context
-      try {
-        await (window as any).authRefresh?.()
-      } catch (e) {
-        // ignore
-      }
-
-      // fetch user and redirect based on role
-      try {
-        const me = await (await import('../../lib/api')).getMe()
-        const role = me.data?.role
-        if (role === 'CLIENT') {
-          navigate('/dashboard')
-        } else if (role === 'CHAUFFEUR') {
-          navigate('/driver-map')
-        } else {
-          navigate('/')
-        }
-      } catch (e) {
-        navigate('/')
-      }
+      // verification will only mark phone as verified (no tokens)
+      await verifyOtp(phone, code)
+      // redirect to login (phone + password)
+      navigate('/auth/login')
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Invalid code')
+      setError(err?.response?.data?.detail || 'Code invalide')
     } finally {
       setLoading(false)
     }
@@ -60,7 +36,7 @@ export default function Verify() {
           <input className="w-full p-2 border rounded mb-4" value={code} onChange={(e) => setCode(e.target.value)} required />
           {error && <div className="text-red-600 mb-2">{error}</div>}
           <button className="w-full py-2 bg-brand-blue-500 text-white rounded" disabled={loading}>
-            {loading ? 'Vérification...' : 'Vérifier & se connecter'}
+            {loading ? 'Vérification...' : 'Vérifier et continuer'}
           </button>
         </form>
       </div>

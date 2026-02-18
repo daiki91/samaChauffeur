@@ -62,12 +62,27 @@ class LogoutView(APIView):
 
 
 class OTPSendView(APIView):
+    """Send OTP during registration/phone verification only.
+
+    Behaviour changed: OTP can only be requested for an existing user whose
+    phone is not yet verified. Returns 400 if the user does not exist or is
+    already verified.
+    """
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
         serializer = OTPRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         phone = serializer.validated_data['phone']
+
+        # Ensure user exists and is not already verified
+        try:
+            user = User.objects.get(phone=phone)
+        except User.DoesNotExist:
+            return Response({'detail': 'User not found. Register first.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if getattr(user, 'phone_verified', False):
+            return Response({'detail': 'Phone already verified.'}, status=status.HTTP_400_BAD_REQUEST)
 
         # generate code and expiry
         from datetime import datetime, timedelta
@@ -99,6 +114,12 @@ class OTPSendView(APIView):
 
 
 class OTPVerifyView(APIView):
+    """Verify OTP during registration only.
+
+    Behaviour changed: verifying an OTP no longer issues JWT tokens. Instead
+    it marks the corresponding user's `phone_verified=True`. The user **must**
+    exist (created via `/auth/register/`) — verification will fail otherwise.
+    """
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
@@ -106,8 +127,6 @@ class OTPVerifyView(APIView):
         serializer.is_valid(raise_exception=True)
         phone = serializer.validated_data['phone']
         code = serializer.validated_data['code']
-
-        
 
         # Find OTP
         try:
@@ -124,15 +143,20 @@ class OTPVerifyView(APIView):
         if otp.expires_at < timezone.now():
             return Response({'detail': 'OTP expired'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Mark used
+        # Mark OTP used
         otp.is_used = True
         otp.save()
 
-        User = get_user_model()
-        user, created = User.objects.get_or_create(phone=phone, defaults={'username': phone, 'role': 'CLIENT'})
+        # User must already exist (registration flow creates user first)
+        try:
+            user = User.objects.get(phone=phone)
+        except User.DoesNotExist:
+            return Response({'detail': 'User not found. Register first.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        refresh = RefreshToken.for_user(user)
-        return Response({'access': str(refresh.access_token), 'refresh': str(refresh)}, status=status.HTTP_200_OK)
+        user.phone_verified = True
+        user.save()
+
+        return Response({'detail': 'Phone verified'}, status=status.HTTP_200_OK)
 
 
 from rest_framework import generics

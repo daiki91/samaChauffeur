@@ -56,8 +56,8 @@ class OTPVerifySerializer(serializers.Serializer):
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ('id', 'username', 'phone', 'role', 'language')
-        read_only_fields = ('id', 'phone', 'role')
+        fields = ('id', 'username', 'phone', 'role', 'language', 'phone_verified')
+        read_only_fields = ('id', 'phone', 'role', 'phone_verified')
 
 
 class AdminUserSerializer(serializers.ModelSerializer):
@@ -65,7 +65,7 @@ class AdminUserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ('id', 'username', 'phone', 'password', 'role', 'language')
+        fields = ('id', 'username', 'phone', 'password', 'role', 'language', 'phone_verified')
         read_only_fields = ('id',)
 
     def create(self, validated_data):

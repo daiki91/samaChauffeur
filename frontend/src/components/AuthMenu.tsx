@@ -9,7 +9,7 @@ export default function AuthMenu() {
   if (!user) {
     return (
       <>
-        <Link to="/auth/phone" className="mr-4 text-sm text-gray-700">Se connecter</Link>
+        <Link to="/auth/login" className="mr-4 text-sm text-gray-700">Se connecter</Link>
         <Link to="/auth/register" className="mr-4 text-sm text-gray-700">Créer un compte</Link>
       </>
     )

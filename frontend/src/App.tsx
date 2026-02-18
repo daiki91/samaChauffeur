@@ -2,6 +2,7 @@ import { createBrowserRouter, RouterProvider, Link, Outlet } from 'react-router-
 import Phone from './pages/Auth/Phone'
 import Verify from './pages/Auth/Verify'
 import Register from './pages/Auth/Register'
+import Login from './pages/Auth/Login'
 import ChauffeurOnboard from './pages/Onboard/Chauffeur'
 import DriverMap from './pages/Map/DriverMap'
 import AuthMenu from './components/AuthMenu'
@@ -37,6 +38,7 @@ const router = createBrowserRouter([
       { index: true, element: <div className="text-center py-20">Welcome to SamaChauffeur</div> },
       { path: 'auth/phone', element: <Phone /> },
       { path: 'auth/verify', element: <Verify /> },
+      { path: 'auth/login', element: <Login /> },
       { path: 'auth/register', element: <Register /> },
       { path: 'onboard', element: <div className="text-center py-20">Onboarding pages coming soon</div> },
       { path: 'onboard/chauffeur', element: <ChauffeurOnboard /> },

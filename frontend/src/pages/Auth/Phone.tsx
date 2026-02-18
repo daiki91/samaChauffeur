@@ -13,6 +13,7 @@ export default function Phone() {
     setLoading(true)
     setError(null)
     try {
+      // This page is used during registration to send verification OTP
       await sendOtp(phone)
       navigate('/auth/verify', { state: { phone } })
     } catch (err: any) {
@@ -25,7 +26,8 @@ export default function Phone() {
   return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="w-full max-w-md p-6 bg-white shadow rounded">
-        <h2 className="text-xl font-semibold mb-4">S'authentifier</h2>
+        <h2 className="text-xl font-semibold mb-4">Vérifier le numéro (inscription)</h2>
+        <p className="text-sm text-gray-600 mb-4">Entrez le numéro utilisé lors de l'inscription pour recevoir le code de vérification.</p>
         <form onSubmit={handleSubmit}>
           <label className="block mb-2">Téléphone</label>
           <input

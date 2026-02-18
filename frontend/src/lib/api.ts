@@ -22,6 +22,10 @@ export async function verifyOtp(phone: string, code: string) {
   return api.post('/auth/otp/verify/', { phone, code })
 }
 
+export async function login(phone: string, password: string) {
+  return api.post('/auth/token/', { phone, password })
+}
+
 export async function refreshToken(refresh: string) {
   return api.post('/auth/token/refresh/', { refresh })
 }
