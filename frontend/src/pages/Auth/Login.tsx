@@ -24,7 +24,16 @@ export default function Login() {
       try {
         await (window as any).authRefresh?.()
       } catch (e) {}
-      navigate('/')
+      // rediriger selon le rôle
+      try {
+        const me = await (await import('../../lib/api')).getMe()
+        const role = me.data?.role
+        if (role === 'CLIENT') navigate('/dashboard')
+        else if (role === 'CHAUFFEUR') navigate('/driver-map')
+        else navigate('/')
+      } catch (e) {
+        navigate('/')
+      }
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Identifiants invalides')
     } finally {

@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { sendOtp } from '../../lib/api'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 
 export default function Phone() {
-  const [phone, setPhone] = useState('')
+  const loc = useLocation()
+  const initialPhone = (loc.state as any)?.phone || ''
+  const [phone, setPhone] = useState(initialPhone)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
@@ -37,7 +39,14 @@ export default function Phone() {
             placeholder="+221770..."
             required
           />
-          {error && <div className="text-red-600 mb-2">{error}</div>}
+          {error && (
+            <div className="text-red-600 mb-2">
+              {error}{' '}
+              {error === 'User not found. Register first.' && (
+                <Link to="/auth/register" className="text-blue-600 underline">S'inscrire</Link>
+              )}
+            </div>
+          )}
           <button className="w-full py-2 bg-brand-blue-500 text-white rounded" disabled={loading}>
             {loading ? 'Envoi...' : 'Envoyer le code'}
           </button>

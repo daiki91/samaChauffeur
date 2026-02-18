@@ -16,7 +16,8 @@ export default function Register() {
     setError(null)
     try {
       await api.post('/auth/register/', form)
-      navigate('/auth/phone')
+      // préremplir le numéro sur la page de vérification
+      navigate('/auth/phone', { state: { phone: form.phone } })
     } catch (err: any) {
       setError(err?.response?.data || 'Error')
     } finally {

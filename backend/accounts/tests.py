@@ -2,6 +2,8 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 from .models import OTP
 from django.contrib.auth import get_user_model
+from django.utils import timezone
+from datetime import timedelta
 
 User = get_user_model()
 
@@ -55,6 +57,28 @@ class AuthOTPTests(TestCase):
             self.assertEqual(resp.status_code, 200)
             self.assertTrue(mock_post.called)
 
+    def test_otp_send_fails_if_user_not_registered(self):
+        resp = self.client.post('/api/auth/otp/send/', {'phone': '+221770000099'}, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('User not found', resp.json().get('detail', ''))
+
+    def test_otp_send_returns_400_if_already_verified(self):
+        resp = self.client.post('/api/auth/register/', {'username': 'u3', 'phone': '+221770000021', 'password': 'pw1234', 'role': 'CLIENT'}, format='json')
+        self.assertEqual(resp.status_code, 201)
+        user = User.objects.get(phone='+221770000021')
+        user.phone_verified = True
+        user.save()
+
+        resp = self.client.post('/api/auth/otp/send/', {'phone': user.phone}, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('Phone already verified', resp.json().get('detail', ''))
+
+    def test_otp_verify_fails_if_user_not_registered(self):
+        # create OTP record for phone without user
+        OTP.objects.create(phone='+221770000030', code='123456', expires_at=timezone.now() + timedelta(minutes=5))
+        resp = self.client.post('/api/auth/otp/verify/', {'phone': '+221770000030', 'code': '123456'}, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('User not found', resp.json().get('detail', ''))
     def test_register_endpoint_creates_user(self):
         resp = self.client.post('/api/auth/register/', {'username': 'toto', 'phone': '+221770000002', 'password': 'pass1234', 'role': 'CLIENT'}, format='json')
         self.assertEqual(resp.status_code, 201)
