@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Inscription — Sama Chauffeur</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="auth-page">
+      <div class="card">
+        <h1>Sama Chauffeur</h1>
+        <p class="lead">Créez votre compte</p>
+
+        <!-- Remplacez `action` par l'URL réelle d'inscription côté backend -->
+        <form class="auth-form" action="#" method="post" novalidate>
+          <label for="full_name">Nom complet</label>
+          <input id="full_name" name="full_name" type="text" required placeholder="Prénom Nom" />
+
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" required placeholder="votre@exemple.com" />
+
+          <label for="password">Mot de passe</label>
+          <input id="password" name="password" type="password" required placeholder="Au moins 8 caractères" minlength="8" />
+
+          <label for="confirm_password">Confirmer le mot de passe</label>
+          <input id="confirm_password" name="confirm_password" type="password" required placeholder="Confirmez le mot de passe" minlength="8" />
+
+          <button type="submit" class="btn">S'inscrire</button>
+        </form>
+
+        <p class="muted">Vous avez déjà un compte ? <a href="login.html">Connectez‑vous</a></p>
+      </div>
+    </div>
+  </body>
+</html>

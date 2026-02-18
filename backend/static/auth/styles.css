@@ -1,0 +1,17 @@
+:root{--bg:#f5f7fb;--card:#ffffff;--accent:#2563eb;--muted:#6b7280}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;background:var(--bg);color:#0f1724;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px}
+.auth-page .card{width:420px;max-width:95%;background:var(--card);box-shadow:0 8px 30px rgba(2,6,23,0.08);border-radius:12px;padding:32px;text-align:left}
+h1{margin:0;font-size:22px;text-align:center;color:var(--accent)}
+.lead{text-align:center;margin-top:8px;margin-bottom:20px;color:var(--muted)}
+.auth-form label{display:block;font-size:13px;margin-bottom:6px;color:#374151;margin-top:10px}
+.auth-form input{width:100%;padding:10px 12px;border-radius:8px;border:1px solid #e6e8eb;background:#fff;font-size:14px;outline:none;transition:box-shadow .12s ease,border-color .12s ease}
+.auth-form input:focus{border-color:rgba(37,99,235,0.6);box-shadow:0 6px 18px rgba(37,99,235,0.06)}
+.row{display:flex;justify-content:space-between;align-items:center;margin-top:10px}
+.checkbox{font-size:13px;color:#374151}
+.checkbox input{margin-right:8px}
+.btn{width:100%;margin-top:18px;padding:10px 14px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;transition:background .18s ease}
+.btn:hover{background:#1348c7}
+.muted{text-align:center;color:var(--muted);margin-top:14px;font-size:14px}
+.link{font-size:13px;color:var(--accent);text-decoration:none}
+@media (max-width:420px){.card{padding:20px}h1{font-size:18px}}

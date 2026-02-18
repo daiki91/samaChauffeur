@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Connexion — Sama Chauffeur</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="auth-page">
+      <div class="card">
+        <h1>Sama Chauffeur</h1>
+        <p class="lead">Connectez‑vous à votre compte</p>
+
+        <!-- Remplacez `action` par l'URL réelle de connexion côté backend -->
+        <form class="auth-form" action="#" method="post" novalidate>
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" required placeholder="votre@exemple.com" />
+
+          <label for="password">Mot de passe</label>
+          <input id="password" name="password" type="password" required placeholder="••••••••" />
+
+          <div class="row">
+            <label class="checkbox"><input type="checkbox" name="remember" /> Se souvenir de moi</label>
+            <a class="link" href="#">Mot de passe oublié ?</a>
+          </div>
+
+          <button type="submit" class="btn">Se connecter</button>
+        </form>
+
+        <p class="muted">Pas encore de compte ? <a href="signup.html">Inscrivez‑vous</a></p>
+      </div>
+    </div>
+  </body>
+</html>
