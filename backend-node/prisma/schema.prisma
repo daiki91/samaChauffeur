@@ -1,0 +1,388 @@
+// Prisma schema — Supabase Postgres
+// Translated from the original Django models (backend/*/models.py)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------- Enums ----------
+
+enum Role {
+  CLIENT
+  CHAUFFEUR
+  ADMIN
+}
+
+enum Language {
+  fr
+  wo
+}
+
+enum VehicleType {
+  CAR
+  SEDAN
+  SUV
+  MINIBUS
+  BUS
+}
+
+enum TripMode {
+  PRIVATE
+  SHARED
+  BUS
+}
+
+enum TripStatus {
+  REQUESTED
+  ASSIGNED
+  ACCEPTED
+  STARTED
+  COMPLETED
+  CANCELLED
+}
+
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TransactionMethod {
+  ORANGE
+  WAVE
+  FREE
+  CASH
+  CARD
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum PayoutStatus {
+  SCHEDULED
+  PROCESSED
+  FAILED
+}
+
+// ---------- accounts ----------
+
+model User {
+  id            Int      @id @default(autoincrement())
+  username      String   @unique
+  phone         String   @unique
+  password      String
+  role          Role     @default(CLIENT)
+  language      Language @default(fr)
+  phoneVerified Boolean  @default(false) @map("phone_verified")
+  isStaff       Boolean  @default(false) @map("is_staff")
+  isActive      Boolean  @default(true) @map("is_active")
+  dateJoined    DateTime @default(now()) @map("date_joined")
+
+  chauffeur      Chauffeur?
+  clientProfile  ClientProfile?
+  trips          Trip[]          @relation("PassengerTrips")
+  tripPassengers TripPassenger[]
+  auditLogs      AuditLog[]
+  refreshTokens  RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  jti       String   @unique
+  userId    Int      @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  revoked   Boolean  @default(false)
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("refresh_tokens")
+}
+
+model Otp {
+  id        Int      @id @default(autoincrement())
+  phone     String
+  code      String
+  createdAt DateTime @default(now()) @map("created_at")
+  expiresAt DateTime @map("expires_at")
+  isUsed    Boolean  @default(false) @map("is_used")
+  attempts  Int      @default(0)
+
+  @@index([phone])
+  @@map("otps")
+}
+
+// ---------- chauffeurs ----------
+
+model Vehicle {
+  id          Int         @id @default(autoincrement())
+  type        VehicleType
+  seats       Int
+  plateNumber String      @unique @map("plate_number")
+
+  chauffeurs Chauffeur[]
+
+  @@map("vehicles")
+}
+
+model Chauffeur {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @unique @map("user_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicleId  Int?     @map("vehicle_id")
+  vehicle    Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+
+  permit     String?
+  insurance  String?
+  isVerified Boolean  @default(false) @map("is_verified")
+  isAvailable Boolean @default(true) @map("is_available")
+
+  latitude  Float?
+  longitude Float?
+
+  assignedTrips Trip[]
+  payouts       Payout[]
+
+  @@map("chauffeurs")
+}
+
+// ---------- courses (trips) ----------
+
+model Trip {
+  id        Int      @id @default(autoincrement())
+  passengerId Int    @map("passenger_id")
+  passenger   User   @relation("PassengerTrips", fields: [passengerId], references: [id], onDelete: Cascade)
+  driverId    Int?   @map("driver_id")
+  driver      Chauffeur? @relation(fields: [driverId], references: [id], onDelete: SetNull)
+
+  origin    String
+  originLat Float? @map("origin_lat")
+  originLng Float? @map("origin_lng")
+
+  destination String
+  destLat     Float? @map("dest_lat")
+  destLng     Float? @map("dest_lng")
+
+  distanceKm        Float? @map("distance_km")
+  estimatedDuration Int?   @map("estimated_duration")
+
+  mode   TripMode   @default(PRIVATE)
+  price  Int?
+  status TripStatus @default(REQUESTED)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  startedAt DateTime? @map("started_at")
+  endedAt   DateTime? @map("ended_at")
+
+  tripPassengers TripPassenger[]
+  supportTickets SupportTicket[]
+
+  @@map("trips")
+}
+
+model TripPassenger {
+  id          Int   @id @default(autoincrement())
+  tripId      Int   @map("trip_id")
+  trip        Trip  @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  passengerId Int   @map("passenger_id")
+  passenger   User  @relation(fields: [passengerId], references: [id], onDelete: Cascade)
+  seatNumber  Int?  @map("seat_number")
+
+  @@map("trip_passengers")
+}
+
+// ---------- pricing ----------
+
+model PricingRule {
+  id          Int         @id @default(autoincrement())
+  vehicleType VehicleType @map("vehicle_type")
+  mode        TripMode    @default(PRIVATE)
+  region      String?
+  pricePerKm  Decimal     @map("price_per_km") @db.Decimal(10, 2)
+  active      Boolean     @default(true)
+
+  @@map("pricing_rules")
+}
+
+// ---------- clients ----------
+
+model ClientProfile {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @unique @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  photo     String?
+  isActive  Boolean  @default(true) @map("is_active")
+  language  Language @default(fr)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  supportTickets SupportTicket[]
+  transactions   Transaction[]
+  paymentMethods PaymentMethod[]
+  tickets        Ticket[]
+
+  @@map("client_profiles")
+}
+
+model SupportTicket {
+  id          Int                 @id @default(autoincrement())
+  clientId    Int                 @map("client_id")
+  client      ClientProfile       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  tripId      Int?                @map("trip_id")
+  trip        Trip?               @relation(fields: [tripId], references: [id], onDelete: SetNull)
+  title       String
+  description String
+  status      SupportTicketStatus @default(OPEN)
+  createdAt   DateTime            @default(now()) @map("created_at")
+
+  @@map("support_tickets")
+}
+
+// ---------- payments ----------
+
+model Transaction {
+  id        Int              @id @default(autoincrement())
+  clientId  Int?             @map("client_id")
+  client    ClientProfile?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  amount    Decimal          @db.Decimal(12, 2)
+  currency  String           @default("XOF")
+  method    TransactionMethod
+  status    TransactionStatus @default(PENDING)
+  reference String?
+  metadata  Json?
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  @@map("transactions")
+}
+
+model PaymentMethod {
+  id        Int           @id @default(autoincrement())
+  clientId  Int           @map("client_id")
+  client    ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  provider  String
+  details   Json?
+  isDefault Boolean       @default(false) @map("is_default")
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  @@map("payment_methods")
+}
+
+model Payout {
+  id          Int          @id @default(autoincrement())
+  chauffeurId Int          @map("chauffeur_id")
+  chauffeur   Chauffeur    @relation(fields: [chauffeurId], references: [id], onDelete: Cascade)
+  amount      Decimal      @db.Decimal(12, 2)
+  status      PayoutStatus @default(SCHEDULED)
+  scheduledAt DateTime?    @map("scheduled_at")
+  processedAt DateTime?    @map("processed_at")
+  metadata    Json?
+
+  @@map("payouts")
+}
+
+// ---------- gares ----------
+
+model Station {
+  id        Int     @id @default(autoincrement())
+  name      String
+  city      String
+  latitude  Float?
+  longitude Float?
+
+  linesOrigin      Line[]     @relation("LineOrigin")
+  linesDestination Line[]     @relation("LineDestination")
+  lineStops        LineStop[]
+
+  @@map("stations")
+}
+
+model Line {
+  id            Int    @id @default(autoincrement())
+  name          String
+  originId      Int    @map("origin_id")
+  origin        Station @relation("LineOrigin", fields: [originId], references: [id], onDelete: Cascade)
+  destinationId Int    @map("destination_id")
+  destination   Station @relation("LineDestination", fields: [destinationId], references: [id], onDelete: Cascade)
+
+  stops     LineStop[]
+  schedules Schedule[]
+  tickets   Ticket[]
+
+  @@map("lines")
+}
+
+model LineStop {
+  id        Int     @id @default(autoincrement())
+  lineId    Int     @map("line_id")
+  line      Line    @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  stationId Int     @map("station_id")
+  station   Station @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  order     Int
+
+  @@unique([lineId, stationId])
+  @@map("line_stops")
+}
+
+model Schedule {
+  id             Int      @id @default(autoincrement())
+  lineId         Int      @map("line_id")
+  line           Line     @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  departureTime  String   @map("departure_time") // "HH:MM:SS"
+  arrivalTime    String   @map("arrival_time")
+  daysOfWeek     String   @default("Mon-Fri") @map("days_of_week")
+  priceBase      Decimal  @default(0) @map("price_base") @db.Decimal(8, 2)
+
+  @@map("schedules")
+}
+
+// ---------- tickets (gare tickets, distinct from clients.SupportTicket) ----------
+
+model Ticket {
+  id         Int           @id @default(autoincrement())
+  passengerId Int          @map("passenger_id")
+  passenger   ClientProfile @relation(fields: [passengerId], references: [id], onDelete: Cascade)
+  lineId     Int           @map("line_id")
+  line       Line          @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  seatNumber String?       @map("seat_number")
+  status     String        @default("ISSUED")
+  issuedAt   DateTime      @default(now()) @map("issued_at")
+  price      Decimal       @db.Decimal(10, 2)
+
+  @@map("tickets")
+}
+
+// ---------- adminpanel ----------
+
+model SystemSetting {
+  id    Int    @id @default(autoincrement())
+  key   String @unique
+  value String
+  type  String @default("string")
+
+  @@map("system_settings")
+}
+
+// ---------- audit ----------
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  actorId    Int?     @map("actor_id")
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actionType String   @map("action_type")
+  objectType String?  @map("object_type")
+  objectId   String?  @map("object_id")
+  data       Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("audit_logs")
+}

@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import React, { createContext, useCallback, useContext, useState } from 'react'
 
 type Toast = { id: string; message: string; tone?: 'info' | 'success' | 'error' }
 

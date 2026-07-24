@@ -3,11 +3,14 @@ import DriverMap from '../Map/DriverMap'
 import { getAvailableTrips, claimTrip } from '../../lib/driverApi'
 import { getPendingPaymentsForDriver, validateTransaction } from '../../lib/api'
 import { useToasts } from '../../components/Toasts'
+import type { Socket } from 'socket.io-client'
+import { connectDriverSocket } from '../../lib/socket'
 
 export default function DriverDashboard() {
   const [trips, setTrips] = useState<any[]>([])
   const [pendingPayments, setPendingPayments] = useState<any[]>([])
-  const wsRef = useRef<WebSocket | null>(null)
+  const socketRef = useRef<Socket | null>(null)
+  const { addToast } = useToasts()
 
   useEffect(() => {
     async function load() {
@@ -27,31 +30,24 @@ export default function DriverDashboard() {
     load()
 
     // listen to driver's group messages (trip.requested/trip.assigned)
-    const token = localStorage.getItem('access')
-    if (token) {
-      const url = `ws://${window.location.hostname}:8000/ws/realtime/driver/?token=${token}`
-      const ws = new WebSocket(url)
-      wsRef.current = ws
-      ws.addEventListener('open', () => console.log('Driver WS opened'))
-      ws.addEventListener('message', (ev) => {
-        try {
-          const data = JSON.parse(ev.data)
-          if (data.type === 'trip.requested') {
-            setTrips((t) => [data, ...t])
-            addToast({ message: `Nouvelle course: ${data.origin} → ${data.destination}`, tone: 'info' })
-          }
-          if (data.type === 'trip.assigned') {
-            // remove from list if assigned to someone else
-            setTrips((t) => t.filter(x => x.id !== data.trip_id))
-          }
-        } catch (e) {
-          // ignore
+    const socket = connectDriverSocket()
+    if (socket) {
+      socketRef.current = socket
+      socket.on('connect', () => console.log('Driver socket connected'))
+      socket.on('message', (data: any) => {
+        if (data.type === 'trip.requested') {
+          setTrips((t) => [data, ...t])
+          addToast({ message: `Nouvelle course: ${data.origin} → ${data.destination}`, tone: 'info' })
+        }
+        if (data.type === 'trip.assigned') {
+          // remove from list if assigned to someone else
+          setTrips((t) => t.filter((x) => x.id !== data.trip_id))
         }
       })
     }
 
     return () => {
-      wsRef.current?.close()
+      socketRef.current?.disconnect()
     }
   }, [])
 
@@ -82,7 +78,7 @@ export default function DriverDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-white p-4 rounded shadow">
           <h2 className="text-lg font-semibold mb-2">Carte (envoyer position)</h2>
-          <DriverMap />
+          <DriverMap role="driver" />
         </div>
         <div className="bg-white p-4 rounded shadow">
           <h2 className="text-lg font-semibold mb-2">Courses disponibles</h2>

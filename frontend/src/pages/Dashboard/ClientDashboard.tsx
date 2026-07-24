@@ -50,10 +50,11 @@ export default function ClientDashboard() {
 
     try {
       const resp = await createTrip({ origin, destination })
-      if (resp.data.assigned_driver) {
-        addToast({ message: `Course assignée au chauffeur ${resp.data.assigned_driver.phone}`, tone: 'success' })
-      } else if (resp.data.note) {
-        addToast({ message: resp.data.note, tone: 'info' })
+      const trip = resp.data
+      if (trip.price) {
+        addToast({ message: `Course créée — estimation ${trip.price} XOF (${trip.distance_km?.toFixed?.(1) ?? '—'} km). En attente d'un chauffeur.`, tone: 'success' })
+      } else {
+        addToast({ message: "Course créée. En attente d'un chauffeur.", tone: 'info' })
       }
       // refresh lists
       const t = await getMyTrips()
@@ -67,19 +68,10 @@ export default function ClientDashboard() {
     }
   }
 
-  const payForTrip = async (trip: any) => {
-    let amount = trip.price || 0
-    if (!amount) {
-      const resp = prompt('Entrer le montant à payer (XOF):', '')
-      if (!resp) return
-      amount = Number(resp)
-      if (isNaN(amount) || amount <= 0) return alert('Montant invalide')
-    }
-
-    const method = prompt('Méthode de paiement (CASH, ORANGE, WAVE):', 'CASH') || 'CASH'
-
+  const payForTrip = async (amount: number, method: string) => {
+    if (!modalTrip) return
     try {
-      const pay = await makePayment({ amount, currency: 'XOF', method, metadata: { trip_id: trip.id } })
+      await makePayment({ amount, currency: 'XOF', method, metadata: { trip_id: modalTrip.id } })
       addToast({ message: 'Paiement enregistré. En attente de validation par le chauffeur.', tone: 'info' })
       // refresh
       const p = await getPaymentsSummary()
@@ -87,7 +79,7 @@ export default function ClientDashboard() {
       const tx = await getTransactions()
       setTransactions(tx.data)
     } catch (e: any) {
-      alert(e?.response?.data?.detail || 'Erreur paiement')
+      addToast({ message: e?.response?.data?.detail || 'Erreur paiement', tone: 'error' })
     }
   }
 
@@ -141,6 +133,13 @@ export default function ClientDashboard() {
           </ul>
         </div>
       </div>
+
+      <PaymentModal
+        visible={!!modalTrip}
+        trip={modalTrip}
+        onClose={() => setModalTrip(null)}
+        onConfirm={payForTrip}
+      />
     </div>
   )
 }
