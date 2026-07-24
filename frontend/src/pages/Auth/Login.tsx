@@ -1,10 +1,16 @@
 import { useState } from 'react'
 import api, { setAuthToken } from '../../lib/api'
 import { saveTokens } from '../../lib/auth'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, Link } from 'react-router-dom'
+import { Phone, Lock } from 'lucide-react'
+import AuthLayout from '../../components/ui/AuthLayout'
+import Input from '../../components/ui/Input'
+import Button from '../../components/ui/Button'
 
 export default function Login() {
-  const [form, setForm] = useState({ phone: '', password: '' })
+  const loc = useLocation()
+  const initialPhone = (loc.state as any)?.phone || ''
+  const [form, setForm] = useState({ phone: initialPhone, password: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
@@ -20,11 +26,9 @@ export default function Login() {
       const { access, refresh } = resp.data
       saveTokens(access, refresh)
       setAuthToken(access)
-      // refresh app-level user context if available
       try {
         await (window as any).authRefresh?.()
       } catch (e) {}
-      // rediriger selon le rôle
       try {
         const me = await (await import('../../lib/api')).getMe()
         const role = me.data?.role
@@ -42,20 +46,43 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="w-full max-w-md p-6 bg-white shadow rounded">
-        <h2 className="text-xl font-semibold mb-4">Connexion</h2>
-        <form onSubmit={handleSubmit}>
-          <label className="block mb-2">Téléphone</label>
-          <input className="w-full p-2 border rounded mb-2" name="phone" value={form.phone} onChange={handleChange} placeholder="+221..." required />
-
-          <label className="block mb-2">Mot de passe</label>
-          <input type="password" className="w-full p-2 border rounded mb-4" name="password" value={form.password} onChange={handleChange} required />
-
-          {error && <div className="text-red-600 mb-2">{error}</div>}
-          <button className="w-full py-2 bg-brand-blue-500 text-white rounded" disabled={loading}>{loading ? 'Connexion...' : 'Se connecter'}</button>
-        </form>
-      </div>
-    </div>
+    <AuthLayout
+      title="Content de vous revoir"
+      subtitle="Connectez-vous pour réserver ou prendre le volant."
+      footer={
+        <>
+          Pas encore de compte ?{' '}
+          <Link to="/auth/register" className="font-semibold text-brand-600">
+            Créer un compte
+          </Link>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Input
+          label="Téléphone"
+          name="phone"
+          value={form.phone}
+          onChange={handleChange}
+          placeholder="+221 77 000 00 00"
+          icon={<Phone size={16} />}
+          required
+        />
+        <Input
+          label="Mot de passe"
+          type="password"
+          name="password"
+          value={form.password}
+          onChange={handleChange}
+          placeholder="••••••••"
+          icon={<Lock size={16} />}
+          required
+        />
+        {error && <div className="rounded-lg bg-red-50 text-red-700 text-sm px-3 py-2">{error}</div>}
+        <Button type="submit" fullWidth size="lg" loading={loading}>
+          Se connecter
+        </Button>
+      </form>
+    </AuthLayout>
   )
 }

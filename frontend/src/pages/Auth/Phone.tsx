@@ -1,6 +1,10 @@
 import { useState } from 'react'
 import { sendOtp } from '../../lib/api'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
+import { Phone as PhoneIcon } from 'lucide-react'
+import AuthLayout from '../../components/ui/AuthLayout'
+import Input from '../../components/ui/Input'
+import Button from '../../components/ui/Button'
 
 export default function Phone() {
   const loc = useLocation()
@@ -19,39 +23,37 @@ export default function Phone() {
       await sendOtp(phone)
       navigate('/auth/verify', { state: { phone } })
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Network error')
+      setError(err?.response?.data?.detail || 'Erreur réseau')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="w-full max-w-md p-6 bg-white shadow rounded">
-        <h2 className="text-xl font-semibold mb-4">Vérifier le numéro (inscription)</h2>
-        <p className="text-sm text-gray-600 mb-4">Entrez le numéro utilisé lors de l'inscription pour recevoir le code de vérification.</p>
-        <form onSubmit={handleSubmit}>
-          <label className="block mb-2">Téléphone</label>
-          <input
-            className="w-full p-2 border rounded mb-4"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="+221770..."
-            required
-          />
-          {error && (
-            <div className="text-red-600 mb-2">
-              {error}{' '}
-              {error === 'User not found. Register first.' && (
-                <Link to="/auth/register" className="text-blue-600 underline">S'inscrire</Link>
-              )}
-            </div>
-          )}
-          <button className="w-full py-2 bg-brand-blue-500 text-white rounded" disabled={loading}>
-            {loading ? 'Envoi...' : 'Envoyer le code'}
-          </button>
-        </form>
-      </div>
-    </div>
+    <AuthLayout title="Vérifier votre numéro" subtitle="Entrez le numéro utilisé lors de l'inscription pour recevoir le code de vérification.">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Input
+          label="Téléphone"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="+221 77 000 00 00"
+          icon={<PhoneIcon size={16} />}
+          required
+        />
+        {error && (
+          <div className="rounded-lg bg-red-50 text-red-700 text-sm px-3 py-2">
+            {error}{' '}
+            {error === 'User not found. Register first.' && (
+              <Link to="/auth/register" className="font-semibold underline">
+                S'inscrire
+              </Link>
+            )}
+          </div>
+        )}
+        <Button type="submit" fullWidth size="lg" loading={loading}>
+          Envoyer le code
+        </Button>
+      </form>
+    </AuthLayout>
   )
 }

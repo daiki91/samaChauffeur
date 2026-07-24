@@ -10,6 +10,14 @@ import { generateOtp, getSmsProvider } from './sms'
 
 const router = Router()
 
+// Trims incidental whitespace (copy/paste, autocomplete) so the same number
+// always matches the same DB row, e.g. at register vs. login vs. OTP verify.
+const phoneField = z
+  .string()
+  .trim()
+  .min(1)
+  .max(20)
+
 // ---------- serializers (mirrors accounts/serializers.py) ----------
 
 function toUserPublic(user: any) {
@@ -26,8 +34,8 @@ function toUserPublic(user: any) {
 // ---------- POST /register/ ----------
 
 const registerSchema = z.object({
-  username: z.string().min(1),
-  phone: z.string().min(1).max(20),
+  username: z.string().trim().min(1),
+  phone: phoneField,
   password: z.string().min(1),
   role: z.enum(['CLIENT', 'CHAUFFEUR', 'ADMIN']).optional().default('CLIENT'),
   language: z.enum(['fr', 'wo']).optional().default('fr'),
@@ -94,7 +102,7 @@ router.patch(
 // ---------- POST /token/ (login by phone + password) ----------
 
 const loginSchema = z.object({
-  phone: z.string().min(1),
+  phone: phoneField,
   password: z.string().min(1),
 })
 
@@ -161,7 +169,7 @@ router.post(
 
 // ---------- POST /otp/send/ ----------
 
-const otpSendSchema = z.object({ phone: z.string().min(1).max(20) })
+const otpSendSchema = z.object({ phone: phoneField })
 
 router.post(
   '/otp/send/',
@@ -187,7 +195,7 @@ router.post(
 
 // ---------- POST /otp/verify/ ----------
 
-const otpVerifySchema = z.object({ phone: z.string().min(1).max(20), code: z.string().min(1).max(6) })
+const otpVerifySchema = z.object({ phone: phoneField, code: z.string().trim().min(1).max(6) })
 
 router.post(
   '/otp/verify/',
@@ -225,8 +233,8 @@ router.post(
 // ---------- GET/POST /users/  (admin) ----------
 
 const adminUserSchema = z.object({
-  username: z.string().min(1),
-  phone: z.string().min(1).max(20),
+  username: z.string().trim().min(1),
+  phone: phoneField,
   password: z.string().optional(),
   role: z.enum(['CLIENT', 'CHAUFFEUR', 'ADMIN']).optional().default('CLIENT'),
   language: z.enum(['fr', 'wo']).optional().default('fr'),

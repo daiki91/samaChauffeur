@@ -148,4 +148,16 @@ export async function applyChauffeur(vehicle: { type: string; seats: number; pla
   return api.post('/chauffeurs/apply/', { vehicle })
 }
 
+export async function estimatePrice(payload: { distance_km: number; vehicle_type: string; mode?: string; region?: string }) {
+  return api.post('/pricing/estimate/', payload)
+}
+
+export async function setChauffeurAvailability(is_available: boolean) {
+  return api.post('/chauffeurs/availability/', { is_available })
+}
+
+export async function updateLocation(latitude: number, longitude: number) {
+  return api.post('/chauffeurs/location/', { latitude, longitude })
+}
+
 export default api

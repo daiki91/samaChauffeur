@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { verifyOtp } from '../../lib/api'
 import { useLocation, useNavigate } from 'react-router-dom'
+import AuthLayout from '../../components/ui/AuthLayout'
+import Button from '../../components/ui/Button'
 
 export default function Verify() {
   const loc = useLocation()
@@ -17,8 +19,8 @@ export default function Verify() {
     try {
       // verification will only mark phone as verified (no tokens)
       await verifyOtp(phone, code)
-      // redirect to login (phone + password)
-      navigate('/auth/login')
+      // redirect to login (phone + password), pre-filling the phone we just verified
+      navigate('/auth/login', { state: { phone } })
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Code invalide')
     } finally {
@@ -27,19 +29,29 @@ export default function Verify() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="w-full max-w-md p-6 bg-white shadow rounded">
-        <h2 className="text-xl font-semibold mb-4">Vérifier le code</h2>
-        <p className="text-sm text-gray-600 mb-2">Code envoyé au: <strong>{phone}</strong></p>
-        <form onSubmit={handleSubmit}>
-          <label className="block mb-2">Code (OTP)</label>
-          <input className="w-full p-2 border rounded mb-4" value={code} onChange={(e) => setCode(e.target.value)} required />
-          {error && <div className="text-red-600 mb-2">{error}</div>}
-          <button className="w-full py-2 bg-brand-blue-500 text-white rounded" disabled={loading}>
-            {loading ? 'Vérification...' : 'Vérifier et continuer'}
-          </button>
-        </form>
-      </div>
-    </div>
+    <AuthLayout
+      title="Vérifiez votre code"
+      subtitle={
+        <>
+          Code envoyé au <strong className="text-stone-700">{phone}</strong>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <input
+          className="w-full rounded-xl border border-stone-200 bg-white px-3.5 py-3.5 text-center text-2xl font-semibold tracking-[0.5em] text-stone-900 outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400"
+          value={code}
+          onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+          placeholder="——————"
+          inputMode="numeric"
+          maxLength={6}
+          required
+        />
+        {error && <div className="rounded-lg bg-red-50 text-red-700 text-sm px-3 py-2">{error}</div>}
+        <Button type="submit" fullWidth size="lg" loading={loading}>
+          Vérifier et continuer
+        </Button>
+      </form>
+    </AuthLayout>
   )
 }

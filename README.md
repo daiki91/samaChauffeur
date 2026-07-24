@@ -104,6 +104,7 @@ Remarque : les chemins ci‑dessous incluent le préfixe `/api` tel que défini 
 - POST `/api/chauffeurs/verify/<pk>/` — Vérifier un chauffeur (admin)
 - GET `/api/chauffeurs/available/?lat=&lng=&radius=` — Chauffeurs disponibles (client)
 - POST `/api/chauffeurs/location/` — Mettre à jour localisation (chauffeur)
+- POST `/api/chauffeurs/availability/` — Basculer en ligne/hors ligne (body: `is_available`, chauffeur)
 - GET, POST `/api/chauffeurs/vehicles/` — Liste/création véhicules (admin)
 - GET, POST `/api/chauffeurs/admin/chauffeurs/` — Admin list/create chauffeurs
 

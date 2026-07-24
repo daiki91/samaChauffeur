@@ -191,6 +191,29 @@ router.post(
   }),
 )
 
+// ---------- POST /availability/ (chauffeur toggles online/offline) ----------
+
+const availabilitySchema = z.object({ is_available: z.boolean() })
+
+router.post(
+  '/availability/',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const parsed = availabilitySchema.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json(parsed.error.flatten())
+
+    const chauffeur = await prisma.chauffeur.findUnique({ where: { userId: req.user!.id } })
+    if (!chauffeur) return res.status(400).json({ detail: 'No chauffeur profile' })
+
+    const updated = await prisma.chauffeur.update({
+      where: { id: chauffeur.id },
+      data: { isAvailable: parsed.data.is_available },
+      include: { vehicle: true },
+    })
+    return res.json(toChauffeur(updated))
+  }),
+)
+
 // ---------- POST /verify/:pk/ (admin) ----------
 
 router.post(
