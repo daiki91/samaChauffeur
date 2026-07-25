@@ -137,6 +137,8 @@ create table if not exists "trips" (
   started_at         timestamp(3),
   ended_at           timestamp(3)
 );
+alter table "trips" add column if not exists "vehicle_type" "VehicleType" not null default 'CAR';
+alter table "trips" add column if not exists "payment_method" "TransactionMethod" not null default 'CASH';
 create index if not exists "trips_passenger_id_idx" on "trips"("passenger_id");
 create index if not exists "trips_driver_id_idx" on "trips"("driver_id");
 
