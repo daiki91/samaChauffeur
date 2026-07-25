@@ -9,6 +9,7 @@ import ChauffeurOnboard from './pages/Onboard/Chauffeur'
 import DriverMap from './pages/Map/DriverMap'
 import AuthMenu from './components/AuthMenu'
 import ClientDashboard from './pages/Dashboard/ClientDashboard'
+import Account from './pages/Account/Account'
 import DriverDashboard from './pages/Driver/DriverDashboard'
 import RequireClient from './components/RequireClient'
 import Button from './components/ui/Button'
@@ -110,6 +111,7 @@ const router = createBrowserRouter([
       { path: 'map', element: <DriverMap /> },
       { path: 'driver-map', element: <DriverDashboard /> },
       { path: 'dashboard', element: <RequireClient><ClientDashboard /></RequireClient> },
+      { path: 'account', element: <Account /> },
     ],
   },
 ], ({

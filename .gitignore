@@ -70,6 +70,7 @@ pnpm-debug.log*
 .idea/
 *.sublime-project
 *.sublime-workspace
+.claude/
 
 # Jupyter
 .ipynb_checkpoints
