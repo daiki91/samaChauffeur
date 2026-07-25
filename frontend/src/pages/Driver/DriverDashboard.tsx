@@ -8,13 +8,11 @@ import { getRoute, type Route } from '../../lib/routing'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Badge from '../../components/ui/Badge'
-import { MapPinned, Wallet, Power, Route as RouteIcon, MoonStar, Navigation, UserCheck, Flag, Wallet as WalletIcon } from 'lucide-react'
+import { MapPinned, Wallet, Power, Route as RouteIcon, MoonStar, Navigation, UserCheck, Flag } from 'lucide-react'
 import type { Socket } from 'socket.io-client'
 import { connectDriverSocket, connectTripSocket } from '../../lib/socket'
 
 const PAYMENT_LABELS: Record<string, string> = { CASH: 'Espèces', ORANGE: 'Orange Money', WAVE: 'Wave', FREE: 'Free Money', CARD: 'Carte' }
-
-const ACTIVE_STATUSES = ['ASSIGNED', 'ACCEPTED', 'STARTED']
 
 export default function DriverDashboard() {
   const [trips, setTrips] = useState<any[]>([])
@@ -340,7 +338,7 @@ export default function DriverDashboard() {
                 <div>
                   <div className="rounded-xl bg-secondary-50 border border-secondary-100 px-4 py-3 mb-3">
                     <div className="text-xs text-secondary-700 flex items-center gap-1.5">
-                      <WalletIcon size={14} />
+                      <Wallet size={14} />
                       Moyen de paiement du client
                     </div>
                     <div className="text-lg font-bold text-secondary-800">
