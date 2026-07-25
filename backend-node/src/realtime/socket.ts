@@ -3,6 +3,7 @@ import { Server, Socket } from 'socket.io'
 import { verifyAccessToken } from '../lib/jwt'
 import prisma from '../lib/prisma'
 import { env } from '../config/env'
+import * as presence from './presence'
 
 /**
  * Realtime layer — port of backend/realtime (Django Channels) to Socket.io.
@@ -20,6 +21,8 @@ let io: Server | null = null
 
 type SocketUser = {
   id: number
+  username: string
+  phone: string
   role: 'CLIENT' | 'CHAUFFEUR' | 'ADMIN'
   isStaff: boolean
   chauffeurId?: number
@@ -31,9 +34,33 @@ async function authenticateSocket(token: string | undefined): Promise<SocketUser
     const decoded = verifyAccessToken(token)
     const user = await prisma.user.findUnique({ where: { id: decoded.user_id }, include: { chauffeur: true } })
     if (!user || !user.isActive) return null
-    return { id: user.id, role: user.role, isStaff: user.isStaff, chauffeurId: user.chauffeur?.id }
+    return { id: user.id, username: user.username, phone: user.phone, role: user.role, isStaff: user.isStaff, chauffeurId: user.chauffeur?.id }
   } catch {
     return null
+  }
+}
+
+/** Basic sanity check for a lat/lng pair coming off the wire — finite numbers, within range. */
+function isValidCoordinate(lat: unknown, lng: unknown): lat is number {
+  const latN = Number(lat)
+  const lngN = Number(lng)
+  return Number.isFinite(latN) && Number.isFinite(lngN) && latN >= -90 && latN <= 90 && lngN >= -180 && lngN <= 180
+}
+
+// Position history: throttle to at most one ChauffeurLocationPing row per driver every 10s,
+// tracked in-memory (module-level) rather than round-tripping the DB on every socket message.
+const LOCATION_PING_THROTTLE_MS = 10_000
+const lastPingAt = new Map<number, number>()
+
+async function maybeRecordLocationPing(driverId: number, lat: number, lng: number) {
+  const now = Date.now()
+  const last = lastPingAt.get(driverId) ?? 0
+  if (now - last < LOCATION_PING_THROTTLE_MS) return
+  lastPingAt.set(driverId, now) // set before the await so a burst of updates can't slip past the throttle
+  try {
+    await prisma.chauffeurLocationPing.create({ data: { chauffeurId: driverId, latitude: lat, longitude: lng } })
+  } catch {
+    // unknown chauffeur id (e.g. deleted concurrently) — ignore, mirrors the live-position update above
   }
 }
 
@@ -66,19 +93,25 @@ export function initRealtime(server: HttpServer) {
       const user = (socket.data as any).user as SocketUser
       const driverId = user.chauffeurId ?? content.driver_id
       const { lat, lng } = content
-      if (driverId != null && lat != null && lng != null) {
-        try {
-          await prisma.chauffeur.update({ where: { id: driverId }, data: { latitude: Number(lat), longitude: Number(lng), isAvailable: true } })
-        } catch {
-          // unknown chauffeur id — ignore, mirrors Chauffeur.DoesNotExist handling
-        }
+      // Reject missing driver id or non-finite / out-of-range coordinates — bad packets are
+      // dropped entirely rather than written to the DB or broadcast to clients/passengers.
+      if (driverId == null || !isValidCoordinate(lat, lng)) return
+      const latN = Number(lat)
+      const lngN = Number(lng)
+
+      try {
+        // Sockets are ordered per-connection, so the last write here is always the most
+        // recent position for this connection — no extra out-of-order handling needed.
+        await prisma.chauffeur.update({ where: { id: driverId }, data: { latitude: latN, longitude: lngN, isAvailable: true } })
+      } catch {
+        // unknown chauffeur id — ignore, mirrors Chauffeur.DoesNotExist handling
       }
-      const msg = { type: 'broadcast.location', driver_id: driverId, lat, lng }
+      void maybeRecordLocationPing(driverId, latN, lngN)
+
+      const msg = { type: 'broadcast.location', driver_id: driverId, lat: latN, lng: lngN }
       driverNsp.to('drivers').emit('message', msg)
       driversNsp.to('drivers').emit('message', msg)
-      if (driverId != null) {
-        driverNsp.to(`driver_${driverId}`).emit('message', { type: 'location.update', driver_id: driverId, lat, lng })
-      }
+      driverNsp.to(`driver_${driverId}`).emit('message', { type: 'location.update', driver_id: driverId, lat: latN, lng: lngN })
     })
 
     socket.on('disconnect', () => {
@@ -121,6 +154,40 @@ export function initRealtime(server: HttpServer) {
     const tripId = (socket.data as any).tripId
     socket.join(`trip_${tripId}`)
     socket.on('disconnect', () => socket.leave(`trip_${tripId}`))
+  })
+
+  // ---------- /ws/realtime/presence/ (any authenticated user: "who's online" for admins) ----------
+  const presenceNsp = io.of('/ws/realtime/presence')
+  presenceNsp.use(async (socket, next) => {
+    const user = await authenticateSocket(getToken(socket))
+    if (!user) return next(new Error('unauthorized'))
+    ;(socket.data as any).user = user
+    next()
+  })
+  presenceNsp.on('connection', (socket) => {
+    const user = (socket.data as any).user as SocketUser
+    presence.markOnline({ id: user.id, username: user.username, phone: user.phone, role: user.role })
+
+    if (user.role === 'ADMIN' || user.isStaff) socket.join('admins')
+
+    presenceNsp.to('admins').emit('message', {
+      type: 'presence.update',
+      user_id: user.id,
+      username: user.username,
+      phone: user.phone,
+      role: user.role,
+      online: true,
+    })
+
+    socket.on('disconnect', async () => {
+      await presence.markOffline(user.id)
+      presenceNsp.to('admins').emit('message', {
+        type: 'presence.update',
+        user_id: user.id,
+        online: false,
+        last_seen_at: new Date().toISOString(),
+      })
+    })
   })
 
   return io

@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { Car, MapPin, LogOut } from 'lucide-react'
+import { Car, MapPin, LogOut, Users } from 'lucide-react'
 import Button from './ui/Button'
 
 export default function AuthMenu() {
@@ -32,6 +32,13 @@ export default function AuthMenu() {
         <Link to="/onboard/chauffeur" className="hidden sm:inline-flex items-center gap-1.5 text-sm font-medium text-stone-600 hover:text-brand-600">
           <MapPin size={15} />
           Devenir chauffeur
+        </Link>
+      )}
+
+      {user.role === 'ADMIN' && (
+        <Link to="/admin/users" className="hidden sm:inline-flex items-center gap-1.5 text-sm font-medium text-stone-600 hover:text-brand-600">
+          <Users size={15} />
+          Comptes connectés
         </Link>
       )}
 

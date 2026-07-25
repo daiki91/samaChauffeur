@@ -1,4 +1,5 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import type { Socket } from 'socket.io-client';
 import {
   getMe,
   hydrateAuthToken,
@@ -8,6 +9,7 @@ import {
   setAuthToken,
   setChauffeurAvailability,
 } from '@/lib/api';
+import { connectPresenceSocket } from '@/lib/socket';
 import { clearTokens, getRefreshToken, saveTokens } from '@/lib/tokenStorage';
 import type { AppMode, Chauffeur, Role, User } from '@/types';
 
@@ -36,6 +38,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [chauffeur, setChauffeur] = useState<Chauffeur | null>(null);
   const [mode, setModeState] = useState<AppMode>('passenger');
   const [loading, setLoading] = useState(true);
+  const presenceSocketRef = useRef<Socket | null>(null);
 
   const refreshMe = useCallback(async () => {
     const res = await getMe();
@@ -77,6 +80,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user?.role, refreshChauffeurStatus]);
 
+  // Fire-and-forget presence heartbeat — no UI here, it just makes this user show up as
+  // "online" to admins. Connects for any restored (app boot) or fresh (login) session.
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    (async () => {
+      const socket = await connectPresenceSocket();
+      if (!socket || !active) return;
+      presenceSocketRef.current = socket;
+    })();
+    return () => {
+      active = false;
+      presenceSocketRef.current?.disconnect();
+      presenceSocketRef.current = null;
+    };
+  }, [user]);
+
   const login = useCallback(
     async (phone: string, password: string) => {
       const res = await apiLogin(phone, password);
@@ -103,6 +123,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     await clearTokens();
     setAuthToken(null);
+    presenceSocketRef.current?.disconnect();
+    presenceSocketRef.current = null;
     setUser(null);
     setChauffeur(null);
     setModeState('passenger');

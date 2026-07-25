@@ -7,6 +7,7 @@ import { asyncHandler } from '../../utils/asyncHandler'
 import { authenticate, isSelfOrAdmin, requireAdmin } from '../../middleware/auth'
 import { signAccessToken, signRefreshToken, validateRefreshToken, verifyRefreshTokenSignature, revokeRefreshToken } from '../../lib/jwt'
 import { generateOtp, getSmsProvider } from './sms'
+import { getOnlineSnapshot, isOnline } from '../../realtime/presence'
 
 const router = Router()
 
@@ -28,6 +29,17 @@ function toUserPublic(user: any) {
     role: user.role,
     language: user.language,
     phone_verified: user.phoneVerified,
+  }
+}
+
+// Admin-only view of a user — adds live presence info on top of the public shape.
+// Kept separate from toUserPublic (used by /me/ and other endpoints) so those
+// responses don't unexpectedly grow new fields.
+function toUserAdmin(user: any) {
+  return {
+    ...toUserPublic(user),
+    is_online: isOnline(user.id),
+    last_seen_at: user.lastSeenAt ? user.lastSeenAt.toISOString() : null,
   }
 }
 
@@ -259,7 +271,19 @@ router.get(
   requireAdmin,
   asyncHandler(async (_req, res) => {
     const users = await prisma.user.findMany({ orderBy: { id: 'asc' } })
-    return res.json(users.map(toUserPublic))
+    return res.json(users.map(toUserAdmin))
+  }),
+)
+
+// ---------- GET /online/ (admin) ----------
+
+router.get(
+  '/online/',
+  authenticate,
+  requireAdmin,
+  asyncHandler(async (_req, res) => {
+    const snapshot = getOnlineSnapshot()
+    return res.json(snapshot.map((u) => ({ user_id: u.userId, username: u.username, phone: u.phone, role: u.role })))
   }),
 )
 

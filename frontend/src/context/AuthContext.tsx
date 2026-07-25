@@ -1,5 +1,7 @@
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react'
+import type { Socket } from 'socket.io-client'
 import { getMe, setAuthToken } from '../lib/api'
+import { connectPresenceSocket } from '../lib/socket'
 
 type User = {
   id: number
@@ -26,6 +28,7 @@ export function useAuth() {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const presenceSocketRef = useRef<Socket | null>(null)
 
   const refreshUser = async () => {
     try {
@@ -50,10 +53,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  // Fire-and-forget presence heartbeat — no UI here, it just makes this user show up as
+  // "online" to admins. Connects once refreshUser() has resolved a logged-in user.
+  useEffect(() => {
+    if (!user) return
+    let active = true
+    ;(async () => {
+      const socket = await connectPresenceSocket()
+      if (!socket || !active) return
+      presenceSocketRef.current = socket
+    })()
+    return () => {
+      active = false
+      presenceSocketRef.current?.disconnect()
+      presenceSocketRef.current = null
+    }
+  }, [user])
+
   const logout = () => {
     localStorage.removeItem('access')
     localStorage.removeItem('refresh')
     setAuthToken(null)
+    presenceSocketRef.current?.disconnect()
+    presenceSocketRef.current = null
     setUser(null)
   }
 

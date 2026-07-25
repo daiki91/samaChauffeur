@@ -14,7 +14,7 @@ export function setAuthToken(token: string | null) {
   else delete api.defaults.headers.common['Authorization']
 }
 
-// OTP DISABLED for local dev — uncomment to re-enable.
+// OTP DISABLED — plus de vérification de numéro à l'inscription. Décommenter pour réactiver.
 // export async function sendOtp(phone: string) {
 //   return api.post('/auth/otp/send/', { phone })
 // }
@@ -33,6 +33,10 @@ export async function refreshToken(refresh: string) {
 
 export async function getMe() {
   return api.get('/auth/me/')
+}
+
+export async function getUsers() {
+  return api.get('/auth/users/')
 }
 
 // Response interceptor to auto-refresh token on 401

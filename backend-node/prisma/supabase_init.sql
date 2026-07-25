@@ -57,8 +57,10 @@ create table if not exists "users" (
   phone_verified boolean not null default false,
   is_staff       boolean not null default false,
   is_active      boolean not null default true,
-  date_joined    timestamp(3) not null default now()
+  date_joined    timestamp(3) not null default now(),
+  last_seen_at   timestamp(3)
 );
+alter table "users" add column if not exists "last_seen_at" timestamp(3);
 
 create table if not exists "refresh_tokens" (
   id         serial primary key,
@@ -103,6 +105,15 @@ create table if not exists "chauffeurs" (
 );
 create index if not exists "chauffeurs_vehicle_id_idx" on "chauffeurs"("vehicle_id");
 
+create table if not exists "chauffeur_location_pings" (
+  id           serial primary key,
+  chauffeur_id integer not null references "chauffeurs"(id) on delete cascade,
+  latitude     double precision not null,
+  longitude    double precision not null,
+  created_at   timestamp(3) not null default now()
+);
+create index if not exists "chauffeur_location_pings_chauffeur_id_created_at_idx" on "chauffeur_location_pings"("chauffeur_id", "created_at");
+
 -- ---------- courses (trips) ----------
 
 create table if not exists "trips" (
@@ -126,6 +137,8 @@ create table if not exists "trips" (
   started_at         timestamp(3),
   ended_at           timestamp(3)
 );
+alter table "trips" add column if not exists "vehicle_type" "VehicleType" not null default 'CAR';
+alter table "trips" add column if not exists "payment_method" "TransactionMethod" not null default 'CASH';
 create index if not exists "trips_passenger_id_idx" on "trips"("passenger_id");
 create index if not exists "trips_driver_id_idx" on "trips"("driver_id");
 
