@@ -20,8 +20,8 @@ export default function Register() {
     setError(null)
     try {
       await api.post('/auth/register/', form)
-      // préremplir le numéro sur la page de vérification
-      navigate('/auth/phone', { state: { phone: form.phone } })
+      // OTP bypassed for local dev — go directly to login
+      navigate('/auth/login', { state: { phone: form.phone } })
     } catch (err: any) {
       const data = err?.response?.data
       setError(

@@ -1,7 +1,8 @@
 import { createBrowserRouter, RouterProvider, Link, Outlet } from 'react-router-dom'
 import { Car, MapPinned, ShieldCheck, Wallet } from 'lucide-react'
-import Phone from './pages/Auth/Phone'
-import Verify from './pages/Auth/Verify'
+// OTP DISABLED for local dev — uncomment to re-enable.
+// import Phone from './pages/Auth/Phone'
+// import Verify from './pages/Auth/Verify'
 import Register from './pages/Auth/Register'
 import Login from './pages/Auth/Login'
 import ChauffeurOnboard from './pages/Onboard/Chauffeur'
@@ -99,8 +100,9 @@ const router = createBrowserRouter([
     element: <Layout />,
     children: [
       { index: true, element: <Home /> },
-      { path: 'auth/phone', element: <Phone /> },
-      { path: 'auth/verify', element: <Verify /> },
+      // OTP DISABLED for local dev — uncomment to re-enable.
+      // { path: 'auth/phone', element: <Phone /> },
+      // { path: 'auth/verify', element: <Verify /> },
       { path: 'auth/login', element: <Login /> },
       { path: 'auth/register', element: <Register /> },
       { path: 'onboard', element: <div className="text-center py-20">Onboarding pages coming soon</div> },

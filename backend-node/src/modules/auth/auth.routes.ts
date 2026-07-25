@@ -66,6 +66,7 @@ router.post(
         password: hashed,
         role: data.role,
         language: data.language,
+        phoneVerified: true, // OTP bypassed for local dev
       },
     })
     return res.status(201).json({ id: user.id, phone: user.phone })
@@ -168,67 +169,70 @@ router.post(
 )
 
 // ---------- POST /otp/send/ ----------
-
-const otpSendSchema = z.object({ phone: phoneField })
-
-router.post(
-  '/otp/send/',
-  asyncHandler(async (req, res) => {
-    const parsed = otpSendSchema.safeParse(req.body)
-    if (!parsed.success) return res.status(400).json(parsed.error.flatten())
-    const { phone } = parsed.data
-
-    const user = await prisma.user.findUnique({ where: { phone } })
-    if (!user) return res.status(400).json({ detail: 'User not found. Register first.' })
-    if (user.phoneVerified) return res.status(400).json({ detail: 'Phone already verified.' })
-
-    const code = generateOtp()
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000)
-    await prisma.otp.create({ data: { phone, code, expiresAt } })
-
-    const provider = getSmsProvider()
-    await provider.send(phone, `Your SamaChauffeur OTP code is: ${code}`)
-
-    return res.json({ detail: 'OTP sent' })
-  }),
-)
+// OTP DISABLED for local dev — registration now auto-verifies the phone.
+// Uncomment to re-enable.
+//
+// const otpSendSchema = z.object({ phone: phoneField })
+//
+// router.post(
+//   '/otp/send/',
+//   asyncHandler(async (req, res) => {
+//     const parsed = otpSendSchema.safeParse(req.body)
+//     if (!parsed.success) return res.status(400).json(parsed.error.flatten())
+//     const { phone } = parsed.data
+//
+//     const user = await prisma.user.findUnique({ where: { phone } })
+//     if (!user) return res.status(400).json({ detail: 'User not found. Register first.' })
+//     if (user.phoneVerified) return res.status(400).json({ detail: 'Phone already verified.' })
+//
+//     const code = generateOtp()
+//     const expiresAt = new Date(Date.now() + 5 * 60 * 1000)
+//     await prisma.otp.create({ data: { phone, code, expiresAt } })
+//
+//     const provider = getSmsProvider()
+//     await provider.send(phone, `Your SamaChauffeur OTP code is: ${code}`)
+//
+//     return res.json({ detail: 'OTP sent' })
+//   }),
+// )
 
 // ---------- POST /otp/verify/ ----------
-
-const otpVerifySchema = z.object({ phone: phoneField, code: z.string().trim().min(1).max(6) })
-
-router.post(
-  '/otp/verify/',
-  asyncHandler(async (req, res) => {
-    const parsed = otpVerifySchema.safeParse(req.body)
-    if (!parsed.success) return res.status(400).json(parsed.error.flatten())
-    const { phone, code } = parsed.data
-
-    const otp = await prisma.otp.findFirst({
-      where: { phone, isUsed: false },
-      orderBy: { createdAt: 'desc' },
-    })
-    if (!otp) return res.status(400).json({ detail: 'No OTP found' })
-
-    if (otp.code !== code) {
-      await prisma.otp.update({ where: { id: otp.id }, data: { attempts: { increment: 1 } } })
-      return res.status(400).json({ detail: 'Invalid code' })
-    }
-
-    if (otp.expiresAt < new Date()) {
-      return res.status(400).json({ detail: 'OTP expired' })
-    }
-
-    await prisma.otp.update({ where: { id: otp.id }, data: { isUsed: true } })
-
-    const user = await prisma.user.findUnique({ where: { phone } })
-    if (!user) return res.status(400).json({ detail: 'User not found. Register first.' })
-
-    await prisma.user.update({ where: { id: user.id }, data: { phoneVerified: true } })
-
-    return res.json({ detail: 'Phone verified' })
-  }),
-)
+// OTP DISABLED for local dev — uncomment to re-enable.
+//
+// const otpVerifySchema = z.object({ phone: phoneField, code: z.string().trim().min(1).max(6) })
+//
+// router.post(
+//   '/otp/verify/',
+//   asyncHandler(async (req, res) => {
+//     const parsed = otpVerifySchema.safeParse(req.body)
+//     if (!parsed.success) return res.status(400).json(parsed.error.flatten())
+//     const { phone, code } = parsed.data
+//
+//     const otp = await prisma.otp.findFirst({
+//       where: { phone, isUsed: false },
+//       orderBy: { createdAt: 'desc' },
+//     })
+//     if (!otp) return res.status(400).json({ detail: 'No OTP found' })
+//
+//     if (otp.code !== code) {
+//       await prisma.otp.update({ where: { id: otp.id }, data: { attempts: { increment: 1 } } })
+//       return res.status(400).json({ detail: 'Invalid code' })
+//     }
+//
+//     if (otp.expiresAt < new Date()) {
+//       return res.status(400).json({ detail: 'OTP expired' })
+//     }
+//
+//     await prisma.otp.update({ where: { id: otp.id }, data: { isUsed: true } })
+//
+//     const user = await prisma.user.findUnique({ where: { phone } })
+//     if (!user) return res.status(400).json({ detail: 'User not found. Register first.' })
+//
+//     await prisma.user.update({ where: { id: user.id }, data: { phoneVerified: true } })
+//
+//     return res.json({ detail: 'Phone verified' })
+//   }),
+// )
 
 // ---------- GET/POST /users/  (admin) ----------
 
