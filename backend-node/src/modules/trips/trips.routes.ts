@@ -9,11 +9,24 @@ import { broadcastToDrivers, broadcastToTrip } from '../../realtime/socket'
 
 const router = Router()
 
+const VEHICLE_TYPES = ['CAR', 'SEDAN', 'SUV', 'MINIBUS', 'BUS'] as const
+const PAYMENT_METHODS = ['CASH', 'ORANGE'] as const
+
 function toTrip(t: any) {
   return {
     id: t.id,
     passenger: t.passengerId,
     driver: t.driverId,
+    driver_detail: t.driver
+      ? {
+          id: t.driver.id,
+          username: t.driver.user?.username,
+          phone: t.driver.user?.phone,
+          vehicle: t.driver.vehicle
+            ? { type: t.driver.vehicle.type, plate_number: t.driver.vehicle.plateNumber, seats: t.driver.vehicle.seats }
+            : null,
+        }
+      : null,
     origin: t.origin,
     origin_lat: t.originLat,
     origin_lng: t.originLng,
@@ -23,6 +36,8 @@ function toTrip(t: any) {
     distance_km: t.distanceKm,
     estimated_duration: t.estimatedDuration,
     mode: t.mode,
+    vehicle_type: t.vehicleType,
+    payment_method: t.paymentMethod,
     price: t.price,
     status: t.status,
     created_at: t.createdAt,
@@ -42,6 +57,9 @@ const createTripSchema = z
     dest_lat: z.number().optional(),
     dest_lng: z.number().optional(),
     mode: z.enum(['PRIVATE', 'SHARED', 'BUS']).optional().default('PRIVATE'),
+    vehicle_type: z.enum(VEHICLE_TYPES).optional().default('CAR'),
+    payment_method: z.enum(PAYMENT_METHODS).optional().default('CASH'),
+    distance_km: z.number().positive().optional(),
   })
   .refine((v) => (v.origin_lat == null) === (v.origin_lng == null), {
     message: 'Both origin_lat and origin_lng must be provided together',
@@ -61,13 +79,16 @@ router.post(
     let distanceKm: number | null = null
     let price: number | null = null
     if (data.origin_lat != null && data.origin_lng != null && data.dest_lat != null && data.dest_lng != null) {
-      distanceKm = haversine(data.origin_lat, data.origin_lng, data.dest_lat, data.dest_lng)
+      // Trust the frontend's real road-route distance (OSRM) when provided — it's what the
+      // passenger's price estimate was computed from, so the created trip must match it
+      // instead of silently recomputing a shorter straight-line distance.
+      distanceKm = data.distance_km ?? haversine(data.origin_lat, data.origin_lng, data.dest_lat, data.dest_lng)
       try {
-        const est = await estimatePrice(distanceKm, 'CAR', data.mode)
+        const est = await estimatePrice(distanceKm, data.vehicle_type, data.mode)
         price = Math.round(est.price)
       } catch (e) {
         if (!(e instanceof NoPricingRuleError)) throw e
-        // no pricing rule found for CAR/mode — leave price null, same as the Django view
+        // no pricing rule found for this vehicle_type/mode — leave price null, same as the Django view
       }
     }
 
@@ -81,6 +102,8 @@ router.post(
         destLat: data.dest_lat,
         destLng: data.dest_lng,
         mode: data.mode,
+        vehicleType: data.vehicle_type,
+        paymentMethod: data.payment_method,
         distanceKm: distanceKm ?? undefined,
         price: price ?? undefined,
       },
@@ -106,7 +129,11 @@ router.get(
   '/my/',
   authenticate,
   asyncHandler(async (req, res) => {
-    const trips = await prisma.trip.findMany({ where: { passengerId: req.user!.id }, orderBy: { createdAt: 'desc' } })
+    const trips = await prisma.trip.findMany({
+      where: { passengerId: req.user!.id },
+      orderBy: { createdAt: 'desc' },
+      include: { driver: { include: { user: true, vehicle: true } } },
+    })
     return res.json(trips.map(toTrip))
   }),
 )
@@ -157,11 +184,24 @@ router.get(
   authenticate,
   asyncHandler(async (req, res) => {
     const pk = parseInt(req.params.pk, 10)
-    const trip = await prisma.trip.findUnique({ where: { id: pk } })
+    const trip = await prisma.trip.findUnique({ where: { id: pk }, include: { driver: { include: { user: true, vehicle: true } } } })
     if (!trip) return res.status(404).json({ detail: 'Not found' })
     return res.json(toTrip(trip))
   }),
 )
+
+async function requireOwnTripAsPassenger(req: any, res: any, pk: number) {
+  const trip = await prisma.trip.findUnique({ where: { id: pk } })
+  if (!trip) {
+    res.status(404).json({ detail: 'Not found' })
+    return null
+  }
+  if (trip.passengerId !== req.user!.id) {
+    res.status(403).json({ detail: 'Not your trip' })
+    return null
+  }
+  return trip
+}
 
 async function requireOwnTrip(req: any, res: any, pk: number) {
   const chauffeur = await prisma.chauffeur.findUnique({ where: { userId: req.user!.id } })
@@ -270,6 +310,103 @@ router.post(
     await prisma.chauffeur.update({ where: { id: ctx.chauffeur.id }, data: { isAvailable: true } })
     broadcastToTrip(ctx.trip.id, { type: 'trip.update', status: 'COMPLETED', trip_id: ctx.trip.id })
     return res.json({ detail: 'Trip completed' })
+  }),
+)
+
+// ---------- POST /:pk/cancel/ (passenger) ----------
+
+router.post(
+  '/:pk/cancel/',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const pk = parseInt(req.params.pk, 10)
+    const trip = await requireOwnTripAsPassenger(req, res, pk)
+    if (!trip) return
+
+    if (!['REQUESTED', 'ASSIGNED', 'ACCEPTED'].includes(trip.status)) {
+      return res.status(400).json({ detail: 'Cannot cancel in current state' })
+    }
+
+    if (trip.driverId != null) {
+      await prisma.chauffeur.update({ where: { id: trip.driverId }, data: { isAvailable: true } })
+    }
+    await prisma.trip.update({ where: { id: pk }, data: { status: 'CANCELLED' } })
+    broadcastToTrip(pk, { type: 'trip.update', status: 'CANCELLED', trip_id: pk })
+
+    return res.json({ detail: 'Trip cancelled' })
+  }),
+)
+
+// ---------- POST /:pk/vehicle-type/ (passenger) ----------
+
+const vehicleTypeSchema = z.object({ vehicle_type: z.enum(VEHICLE_TYPES) })
+
+router.post(
+  '/:pk/vehicle-type/',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const pk = parseInt(req.params.pk, 10)
+    const trip = await requireOwnTripAsPassenger(req, res, pk)
+    if (!trip) return
+
+    if (trip.status !== 'REQUESTED') {
+      return res.status(400).json({ detail: 'Cannot change vehicle type once a driver is assigned' })
+    }
+
+    const parsed = vehicleTypeSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json(parsed.error.flatten())
+
+    let price = trip.price
+    if (trip.distanceKm != null) {
+      try {
+        const est = await estimatePrice(trip.distanceKm, parsed.data.vehicle_type, trip.mode)
+        price = Math.round(est.price)
+      } catch (e) {
+        if (!(e instanceof NoPricingRuleError)) throw e
+        price = null
+      }
+    }
+
+    const updated = await prisma.trip.update({
+      where: { id: pk },
+      data: { vehicleType: parsed.data.vehicle_type, price: price ?? undefined },
+      include: { driver: { include: { user: true, vehicle: true } } },
+    })
+    broadcastToTrip(pk, { type: 'trip.update', status: updated.status, trip_id: pk })
+
+    return res.json(toTrip(updated))
+  }),
+)
+
+// ---------- POST /:pk/payment-method/ (passenger) ----------
+
+const paymentMethodSchema = z.object({ payment_method: z.enum(PAYMENT_METHODS) })
+
+router.post(
+  '/:pk/payment-method/',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const pk = parseInt(req.params.pk, 10)
+    const trip = await requireOwnTripAsPassenger(req, res, pk)
+    if (!trip) return
+
+    // Unlike the vehicle type, the payment method doesn't affect driver matching, so it
+    // stays editable for the whole lifecycle of the trip — only locked once it's over.
+    if (['COMPLETED', 'CANCELLED'].includes(trip.status)) {
+      return res.status(400).json({ detail: 'Cannot change payment method once the trip is over' })
+    }
+
+    const parsed = paymentMethodSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json(parsed.error.flatten())
+
+    const updated = await prisma.trip.update({
+      where: { id: pk },
+      data: { paymentMethod: parsed.data.payment_method },
+      include: { driver: { include: { user: true, vehicle: true } } },
+    })
+    broadcastToTrip(pk, { type: 'trip.update', status: updated.status, trip_id: pk })
+
+    return res.json(toTrip(updated))
   }),
 )
 

@@ -191,9 +191,11 @@ model Trip {
   distanceKm        Float? @map("distance_km")
   estimatedDuration Int?   @map("estimated_duration")
 
-  mode   TripMode   @default(PRIVATE)
-  price  Int?
-  status TripStatus @default(REQUESTED)
+  mode          TripMode           @default(PRIVATE)
+  vehicleType   VehicleType        @default(CAR) @map("vehicle_type")
+  paymentMethod TransactionMethod  @default(CASH) @map("payment_method")
+  price         Int?
+  status        TripStatus         @default(REQUESTED)
 
   createdAt DateTime  @default(now()) @map("created_at")
   startedAt DateTime? @map("started_at")

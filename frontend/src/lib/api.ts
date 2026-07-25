@@ -116,8 +116,39 @@ export async function getMyTrips() {
   return api.get('/trips/my/')
 }
 
-export async function createTrip(payload: { origin: string; origin_lat?: number; origin_lng?: number; destination: string; dest_lat?: number; dest_lng?: number; mode?: string }) {
+export async function createTrip(payload: {
+  origin: string
+  origin_lat?: number
+  origin_lng?: number
+  destination: string
+  dest_lat?: number
+  dest_lng?: number
+  mode?: string
+  vehicle_type?: string
+  distance_km?: number
+  payment_method?: string
+}) {
   return api.post('/trips/create/', payload)
+}
+
+export async function getTrip(id: number) {
+  return api.get(`/trips/${id}/`)
+}
+
+export async function cancelTrip(id: number) {
+  return api.post(`/trips/${id}/cancel/`)
+}
+
+export async function updateTripVehicleType(id: number, vehicle_type: string) {
+  return api.post(`/trips/${id}/vehicle-type/`, { vehicle_type })
+}
+
+export async function updateTripPaymentMethod(id: number, payment_method: string) {
+  return api.post(`/trips/${id}/payment-method/`, { payment_method })
+}
+
+export async function deleteAccount() {
+  return api.delete('/auth/me/')
 }
 
 export async function getAvailableTrips() {

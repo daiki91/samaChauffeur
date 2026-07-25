@@ -129,6 +129,8 @@ create table if not exists "trips" (
   distance_km        double precision,
   estimated_duration integer,
   mode               "TripMode" not null default 'PRIVATE',
+  vehicle_type       "VehicleType" not null default 'CAR',
+  payment_method     "TransactionMethod" not null default 'CASH',
   price              integer,
   status             "TripStatus" not null default 'REQUESTED',
   created_at         timestamp(3) not null default now(),
