@@ -151,6 +151,27 @@ router.get(
   }),
 )
 
+// ---------- GET /my-active/ (chauffeur) ----------
+// The trip currently assigned to this driver and not yet over — lets the driver dashboard
+// restore its in-progress trip panel (route + accept/start/end actions) after a page reload.
+
+router.get(
+  '/my-active/',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const chauffeur = await prisma.chauffeur.findUnique({ where: { userId: req.user!.id } })
+    if (!chauffeur) return res.status(403).json({ detail: 'Not a chauffeur' })
+
+    const trip = await prisma.trip.findFirst({
+      where: { driverId: chauffeur.id, status: { in: ['ASSIGNED', 'ACCEPTED', 'STARTED'] } },
+      orderBy: { createdAt: 'desc' },
+      include: { driver: { include: { user: true, vehicle: true } } },
+    })
+    if (!trip) return res.json(null)
+    return res.json(toTrip(trip))
+  }),
+)
+
 // ---------- POST /claim/:pk/ ----------
 
 router.post(
