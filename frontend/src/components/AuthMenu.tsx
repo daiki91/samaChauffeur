@@ -28,7 +28,7 @@ export default function AuthMenu() {
           <Car size={15} />
           Espace chauffeur
         </Link>
-      ) : (
+      ) : user.role === 'CLIENT' ? null : (
         <Link to="/onboard/chauffeur" className="hidden sm:inline-flex items-center gap-1.5 text-sm font-medium text-stone-600 hover:text-brand-600">
           <MapPin size={15} />
           Devenir chauffeur
@@ -36,13 +36,15 @@ export default function AuthMenu() {
       )}
 
       <div className="flex items-center gap-2 pl-3 border-l border-stone-200">
-        <span className="grid place-items-center w-8 h-8 rounded-full bg-brand-100 text-brand-700 font-semibold text-xs uppercase">
-          {user.username?.slice(0, 2)}
-        </span>
-        <div className="hidden sm:block text-sm leading-tight">
-          <div className="font-medium text-stone-800">{user.username}</div>
-          <div className="text-xs text-stone-400">{user.role === 'CHAUFFEUR' ? 'Chauffeur' : user.role === 'ADMIN' ? 'Admin' : 'Passager'}</div>
-        </div>
+        <Link to="/account" className="flex items-center gap-2 rounded-lg hover:bg-stone-50 transition-colors -m-1 p-1">
+          <span className="grid place-items-center w-8 h-8 rounded-full bg-brand-100 text-brand-700 font-semibold text-xs uppercase">
+            {user.username?.slice(0, 2)}
+          </span>
+          <div className="hidden sm:block text-sm leading-tight">
+            <div className="font-medium text-stone-800">{user.username}</div>
+            <div className="text-xs text-stone-400">{user.role === 'CHAUFFEUR' ? 'Chauffeur' : user.role === 'ADMIN' ? 'Admin' : 'Passager'}</div>
+          </div>
+        </Link>
         <button
           onClick={logout}
           title="Déconnexion"

@@ -149,7 +149,7 @@ export default function DriverMap({
   }, [origin, destination, myPosition])
 
   const mapBody = (
-    <div className="relative rounded-2xl overflow-hidden" style={{ height }}>
+    <div className="relative z-0 isolate rounded-2xl overflow-hidden" style={{ height }}>
       {onMapClick && (
         <div className="absolute z-[400] top-3 left-1/2 -translate-x-1/2 bg-stone-900/80 text-white text-xs font-medium px-3 py-1.5 rounded-full shadow-floating pointer-events-none">
           {mapClickHint}

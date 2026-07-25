@@ -100,6 +100,15 @@ router.patch(
   }),
 )
 
+router.delete(
+  '/me/',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    await prisma.user.delete({ where: { id: req.user!.id } })
+    return res.status(204).end()
+  }),
+)
+
 // ---------- POST /token/ (login by phone + password) ----------
 
 const loginSchema = z.object({
