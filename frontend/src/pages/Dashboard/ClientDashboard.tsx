@@ -368,28 +368,6 @@ export default function ClientDashboard() {
             </ul>
           </div>
         </Card>
-
-        {/* <Card>
-          <h2 className="font-semibold text-stone-800 mb-3 flex items-center gap-2">
-            <Wallet size={18} className="text-secondary-600" />
-            Paiements
-          </h2>
-          <div className="rounded-xl bg-secondary-50 px-4 py-3 mb-3">
-            <div className="text-xs text-secondary-700">Total dépensé</div>
-            <div className="text-xl font-bold text-secondary-800">{paymentsSummary ? paymentsSummary.total_spent : '—'} XOF</div>
-          </div>
-          {transactions.length === 0 && <p className="text-sm text-stone-400 py-6 text-center">Aucune transaction.</p>}
-          <ul className="divide-y divide-stone-100">
-            {transactions.map((tx) => (
-              <li key={tx.id} className="py-2.5 flex items-center justify-between">
-                <span className="text-sm text-stone-700">
-                  {tx.amount} {tx.currency}
-                </span>
-                <Badge status={tx.status} />
-              </li>
-            ))}
-          </ul>
-        </Card> */}
       </div>
 
       <PaymentModal visible={!!modalTrip} trip={modalTrip} onClose={() => setModalTrip(null)} onConfirm={payForTrip} />
