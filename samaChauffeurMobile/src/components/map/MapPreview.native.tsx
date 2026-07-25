@@ -1,5 +1,6 @@
 import React, { useMemo, useRef } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { colors, radii } from '@/constants/theme';
 import type { LatLng } from '@/types';
 import MapErrorBoundary from './MapErrorBoundary';
@@ -23,13 +24,7 @@ type Props = {
 const DEFAULT_CENTER = { lat: 3.848, lng: 11.5021 }; // Yaoundé fallback
 
 function InnerMap({ myPosition, markers = [], route, onPress, height = 260 }: Props) {
-  // Native-only module: require lazily so web bundling / missing-native-module
-  // situations don't blow up the whole screen (caught by MapErrorBoundary too).
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const Maps = require('react-native-maps');
-  const MapView = Maps.default;
-  const { Marker, Polyline, PROVIDER_GOOGLE } = Maps;
-  const mapRef = useRef<any>(null);
+  const mapRef = useRef<MapView | null>(null);
 
   const center = myPosition ?? markers[0]?.position ?? DEFAULT_CENTER;
 
@@ -52,7 +47,7 @@ function InnerMap({ myPosition, markers = [], route, onPress, height = 260 }: Pr
         initialRegion={region}
         showsUserLocation
         showsMyLocationButton={false}
-        onPress={(e: any) => onPress?.({ lat: e.nativeEvent.coordinate.latitude, lng: e.nativeEvent.coordinate.longitude })}
+        onPress={(e) => onPress?.({ lat: e.nativeEvent.coordinate.latitude, lng: e.nativeEvent.coordinate.longitude })}
       >
         {markers.map((m) => (
           <Marker
@@ -71,13 +66,6 @@ function InnerMap({ myPosition, markers = [], route, onPress, height = 260 }: Pr
 }
 
 export default function MapPreview(props: Props) {
-  if (Platform.OS === 'web') {
-    return (
-      <View style={[styles.wrap, { height: props.height ?? 260 }]}>
-        <MapPlaceholder label="Carte disponible sur mobile" />
-      </View>
-    );
-  }
   return (
     <MapErrorBoundary
       fallback={
