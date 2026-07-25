@@ -14,6 +14,8 @@ import DriverDashboard from './pages/Driver/DriverDashboard'
 import AdminUsers from './pages/Admin/AdminUsers'
 import RequireClient from './components/RequireClient'
 import RequireAdmin from './components/RequireAdmin'
+import RequireAuth from './components/RequireAuth'
+import RequireChauffeur from './components/RequireChauffeur'
 import Button from './components/ui/Button'
 import Spinner from './components/ui/Spinner'
 import { useAuth } from './context/AuthContext'
@@ -125,12 +127,12 @@ const router = createBrowserRouter([
       { path: 'auth/login', element: <Login /> },
       { path: 'auth/register', element: <Register /> },
       { path: 'onboard', element: <div className="text-center py-20">Onboarding pages coming soon</div> },
-      { path: 'onboard/chauffeur', element: <ChauffeurOnboard /> },
+      { path: 'onboard/chauffeur', element: <RequireAuth><ChauffeurOnboard /></RequireAuth> },
       { path: 'map', element: <DriverMap /> },
-      { path: 'driver-map', element: <DriverDashboard /> },
+      { path: 'driver-map', element: <RequireChauffeur><DriverDashboard /></RequireChauffeur> },
       { path: 'dashboard', element: <RequireClient><ClientDashboard /></RequireClient> },
       { path: 'admin/users', element: <RequireAdmin><AdminUsers /></RequireAdmin> },
-      { path: 'account', element: <Account /> },
+      { path: 'account', element: <RequireAuth><Account /></RequireAuth> },
     ],
   },
 ], ({

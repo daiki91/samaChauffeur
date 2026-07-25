@@ -10,6 +10,7 @@ import Button from '../../components/ui/Button'
 export default function Login() {
   const loc = useLocation()
   const initialPhone = (loc.state as any)?.phone || ''
+  const redirectTo = (loc.state as any)?.from as string | undefined
   const [form, setForm] = useState({ phone: initialPhone, password: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -29,6 +30,12 @@ export default function Login() {
       try {
         await (window as any).authRefresh?.()
       } catch (e) {}
+      // If the user was bounced here from a protected page, send them back there
+      // instead of the role-based default landing page.
+      if (redirectTo) {
+        navigate(redirectTo)
+        return
+      }
       try {
         const me = await (await import('../../lib/api')).getMe()
         const role = me.data?.role
