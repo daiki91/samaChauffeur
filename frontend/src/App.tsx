@@ -12,6 +12,7 @@ import ClientDashboard from './pages/Dashboard/ClientDashboard'
 import Account from './pages/Account/Account'
 import DriverDashboard from './pages/Driver/DriverDashboard'
 import AdminUsers from './pages/Admin/AdminUsers'
+import AdminOverview from './pages/Admin/AdminOverview'
 import RequireClient from './components/RequireClient'
 import RequireAdmin from './components/RequireAdmin'
 import RequireAuth from './components/RequireAuth'
@@ -44,7 +45,6 @@ function Layout() {
 }
 
 // Redirects to the signed-in user's own space instead of the marketing landing page.
-// ADMIN has no dedicated dashboard yet, so it falls through to the landing page.
 function Home() {
   const { user, loading } = useAuth()
 
@@ -57,6 +57,7 @@ function Home() {
   }
   if (user?.role === 'CLIENT') return <Navigate to="/dashboard" replace />
   if (user?.role === 'CHAUFFEUR') return <Navigate to="/driver-map" replace />
+  if (user?.role === 'ADMIN') return <Navigate to="/admin" replace />
 
   return (
     <div>
@@ -131,6 +132,7 @@ const router = createBrowserRouter([
       { path: 'map', element: <DriverMap /> },
       { path: 'driver-map', element: <RequireChauffeur><DriverDashboard /></RequireChauffeur> },
       { path: 'dashboard', element: <RequireClient><ClientDashboard /></RequireClient> },
+      { path: 'admin', element: <RequireAdmin><AdminOverview /></RequireAdmin> },
       { path: 'admin/users', element: <RequireAdmin><AdminUsers /></RequireAdmin> },
       { path: 'account', element: <RequireAuth><Account /></RequireAuth> },
     ],
