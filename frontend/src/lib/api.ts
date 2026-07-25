@@ -14,14 +14,13 @@ export function setAuthToken(token: string | null) {
   else delete api.defaults.headers.common['Authorization']
 }
 
-// OTP DISABLED for local dev — uncomment to re-enable.
-// export async function sendOtp(phone: string) {
-//   return api.post('/auth/otp/send/', { phone })
-// }
-//
-// export async function verifyOtp(phone: string, code: string) {
-//   return api.post('/auth/otp/verify/', { phone, code })
-// }
+export async function sendOtp(phone: string) {
+  return api.post('/auth/otp/send/', { phone })
+}
+
+export async function verifyOtp(phone: string, code: string) {
+  return api.post('/auth/otp/verify/', { phone, code })
+}
 
 export async function login(phone: string, password: string) {
   return api.post('/auth/token/', { phone, password })
