@@ -295,7 +295,7 @@ export default function ClientDashboard() {
         </Card>
 
         {/* Booking / ride status card */}
-        <Card className="lg:col-span-2 lg:sticky lg:top-20">
+        <Card className="lg:col-span-2 lg:top-20">
           <RideStatusBar
             activeTrip={activeTrip}
             originText={originText}
@@ -339,7 +339,7 @@ export default function ClientDashboard() {
       </div>
 
       {/* History + payments */}
-      <div className="grid lg:grid-cols-2 gap-6 mt-6">
+      <div className="grid lg:grid-cols-1 gap-6 mt-6">
         <Card padded={false} className="flex flex-col max-h-[60vh]">
           <h2 className="font-semibold text-stone-800 px-5 py-4 border-b border-stone-100 shrink-0">Historique des courses</h2>
           <div className="overflow-y-auto px-5 flex-1">
@@ -349,7 +349,7 @@ export default function ClientDashboard() {
                 <li key={t.id} className="py-3 flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="text-sm font-medium text-stone-800 truncate">
-                      {t.origin} → {t.destination}
+                      {t.origin.split(",").slice(0,1).join("")} → {t.destination.split(",").slice(0,1).join("")}
                     </div>
                     <div className="text-xs text-stone-400 mt-0.5">
                       {formatDateTime(t.created_at)} · {t.price ? `${t.price} XOF` : 'Prix non estimé'}
@@ -369,7 +369,7 @@ export default function ClientDashboard() {
           </div>
         </Card>
 
-        <Card>
+        {/* <Card>
           <h2 className="font-semibold text-stone-800 mb-3 flex items-center gap-2">
             <Wallet size={18} className="text-secondary-600" />
             Paiements
@@ -389,7 +389,7 @@ export default function ClientDashboard() {
               </li>
             ))}
           </ul>
-        </Card>
+        </Card> */}
       </div>
 
       <PaymentModal visible={!!modalTrip} trip={modalTrip} onClose={() => setModalTrip(null)} onConfirm={payForTrip} />
