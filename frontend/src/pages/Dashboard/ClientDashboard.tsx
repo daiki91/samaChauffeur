@@ -4,8 +4,6 @@ import DriverMap from '../Map/DriverMap'
 import {
   getAvailableChauffeurs,
   getMyTrips,
-  getTransactions,
-  getPaymentsSummary,
   createTrip,
   makePayment,
   estimatePrice,
@@ -26,7 +24,7 @@ import { haversineKm } from '../../lib/geo'
 import { reverseGeocode } from '../../lib/geocode'
 import { useGeolocation } from '../../lib/useGeolocation'
 import { connectTripSocket } from '../../lib/socket'
-import { MapPinned, Wallet } from 'lucide-react'
+import { MapPinned } from 'lucide-react'
 
 const TERMINAL_STATUSES = ['COMPLETED', 'CANCELLED']
 
@@ -40,8 +38,6 @@ export default function ClientDashboard() {
   const { user } = useAuth()
   const [drivers, setDrivers] = useState<any[]>([])
   const [trips, setTrips] = useState<any[]>([])
-  const [transactions, setTransactions] = useState<any[]>([])
-  const [paymentsSummary, setPaymentsSummary] = useState<any | null>(null)
   const [modalTrip, setModalTrip] = useState<any | null>(null)
   const { addToast } = useToasts()
   const { position: myPosition } = useGeolocation()
@@ -74,14 +70,6 @@ export default function ClientDashboard() {
         setTrips(t.data)
         const ongoing = t.data.find((trip: ActiveTrip) => !TERMINAL_STATUSES.includes(trip.status))
         if (ongoing) setActiveTrip(ongoing)
-      } catch (e) {}
-      try {
-        const p = await getTransactions()
-        setTransactions(p.data)
-      } catch (e) {}
-      try {
-        const s = await getPaymentsSummary()
-        setPaymentsSummary(s.data)
       } catch (e) {}
     }
     load()
@@ -203,10 +191,6 @@ export default function ClientDashboard() {
     try {
       await makePayment({ amount, currency: 'XOF', method, metadata: { trip_id: modalTrip.id } })
       addToast({ message: 'Paiement enregistré. En attente de validation par le chauffeur.', tone: 'info' })
-      const p = await getPaymentsSummary()
-      setPaymentsSummary(p.data)
-      const tx = await getTransactions()
-      setTransactions(tx.data)
     } catch (e: any) {
       addToast({ message: e?.response?.data?.detail || 'Erreur paiement', tone: 'error' })
     }
@@ -272,7 +256,7 @@ export default function ClientDashboard() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-      <h1 className="text-2xl font-bold text-stone-900 mb-1">Bonjour{user?.username ? `, ${user.username}` : ''} 👋</h1>
+      <h1 className="text-2xl font-bold text-stone-900 mb-1">{new Date().getHours() < 12 ? 'Bonjour' : 'Bonsoir'}{user?.username ? `, ${user.username}` : ''} 👋</h1>
       <p className="text-stone-500 mb-6">Où souhaitez-vous aller aujourd'hui ?</p>
 
       <div className="grid lg:grid-cols-5 gap-6 items-start">
@@ -295,7 +279,7 @@ export default function ClientDashboard() {
         </Card>
 
         {/* Booking / ride status card */}
-        <Card className="lg:col-span-2 lg:sticky lg:top-20">
+        <Card className="lg:col-span-2 lg:top-20">
           <RideStatusBar
             activeTrip={activeTrip}
             originText={originText}
@@ -339,7 +323,7 @@ export default function ClientDashboard() {
       </div>
 
       {/* History + payments */}
-      <div className="grid lg:grid-cols-2 gap-6 mt-6">
+      <div className="grid lg:grid-cols-1 gap-6 mt-6">
         <Card padded={false} className="flex flex-col max-h-[60vh]">
           <h2 className="font-semibold text-stone-800 px-5 py-4 border-b border-stone-100 shrink-0">Historique des courses</h2>
           <div className="overflow-y-auto px-5 flex-1">
@@ -349,7 +333,7 @@ export default function ClientDashboard() {
                 <li key={t.id} className="py-3 flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="text-sm font-medium text-stone-800 truncate">
-                      {t.origin} → {t.destination}
+                      {t.origin.split(",").slice(0,1).join("")} → {t.destination.split(",").slice(0,1).join("")}
                     </div>
                     <div className="text-xs text-stone-400 mt-0.5">
                       {formatDateTime(t.created_at)} · {t.price ? `${t.price} XOF` : 'Prix non estimé'}
@@ -367,28 +351,6 @@ export default function ClientDashboard() {
               ))}
             </ul>
           </div>
-        </Card>
-
-        <Card>
-          <h2 className="font-semibold text-stone-800 mb-3 flex items-center gap-2">
-            <Wallet size={18} className="text-secondary-600" />
-            Paiements
-          </h2>
-          <div className="rounded-xl bg-secondary-50 px-4 py-3 mb-3">
-            <div className="text-xs text-secondary-700">Total dépensé</div>
-            <div className="text-xl font-bold text-secondary-800">{paymentsSummary ? paymentsSummary.total_spent : '—'} XOF</div>
-          </div>
-          {transactions.length === 0 && <p className="text-sm text-stone-400 py-6 text-center">Aucune transaction.</p>}
-          <ul className="divide-y divide-stone-100">
-            {transactions.map((tx) => (
-              <li key={tx.id} className="py-2.5 flex items-center justify-between">
-                <span className="text-sm text-stone-700">
-                  {tx.amount} {tx.currency}
-                </span>
-                <Badge status={tx.status} />
-              </li>
-            ))}
-          </ul>
         </Card>
       </div>
 

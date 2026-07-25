@@ -370,7 +370,7 @@ export default function DriverDashboard() {
                   <li key={t.id} className="rounded-xl border border-stone-100 p-3 flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-sm font-medium text-stone-800 truncate">
-                        {t.origin} → {t.destination}
+                        {t.origin.split(',').slice(0, 1).join('')} → {t.destination.split(',').slice(0, 1).join('')}
                       </div>
                       <div className="text-xs text-stone-400 mt-0.5">
                         {t.distance_km ? `${Number(t.distance_km).toFixed(1)} km` : '—'} · {t.price ? `${t.price} XOF` : 'Prix non estimé'}
