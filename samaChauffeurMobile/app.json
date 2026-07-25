@@ -10,8 +10,10 @@
     "ios": {
       "icon": "./assets/expo.icon",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "samaChauffeur utilise votre position pour vous proposer des chauffeurs proches et suivre vos courses."
-      }
+        "NSLocationWhenInUseUsageDescription": "samaChauffeur utilise votre position pour vous proposer des chauffeurs proches et suivre vos courses.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.daiki91.samaChauffeurMobile"
     },
     "android": {
       "adaptiveIcon": {
@@ -23,8 +25,15 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
-      ]
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ],
+      "package": "com.daiki91.samaChauffeurMobile"
     },
     "web": {
       "output": "static",
@@ -50,6 +59,18 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "31fb0861-526b-41e3-96eb-d7fecaa8a922"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/31fb0861-526b-41e3-96eb-d7fecaa8a922"
     }
   }
 }
