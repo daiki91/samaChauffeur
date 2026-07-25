@@ -1,4 +1,4 @@
-import { createBrowserRouter, RouterProvider, Link, Outlet } from 'react-router-dom'
+import { createBrowserRouter, RouterProvider, Link, Navigate, Outlet } from 'react-router-dom'
 import { Car, MapPinned, ShieldCheck, Wallet } from 'lucide-react'
 // OTP DISABLED for local dev — uncomment to re-enable.
 // import Phone from './pages/Auth/Phone'
@@ -13,6 +13,8 @@ import Account from './pages/Account/Account'
 import DriverDashboard from './pages/Driver/DriverDashboard'
 import RequireClient from './components/RequireClient'
 import Button from './components/ui/Button'
+import Spinner from './components/ui/Spinner'
+import { useAuth } from './context/AuthContext'
 import './index.css'
 
 function Layout() {
@@ -37,7 +39,21 @@ function Layout() {
   )
 }
 
+// Redirects to the signed-in user's own space instead of the marketing landing page.
+// ADMIN has no dedicated dashboard yet, so it falls through to the landing page.
 function Home() {
+  const { user, loading } = useAuth()
+
+  if (loading) {
+    return (
+      <div className="min-h-[60vh] grid place-items-center">
+        <Spinner size={28} />
+      </div>
+    )
+  }
+  if (user?.role === 'CLIENT') return <Navigate to="/dashboard" replace />
+  if (user?.role === 'CHAUFFEUR') return <Navigate to="/driver-map" replace />
+
   return (
     <div>
       <section className="bg-hero-gradient text-white">
