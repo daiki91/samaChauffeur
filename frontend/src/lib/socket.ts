@@ -1,6 +1,6 @@
 import { io, Socket } from 'socket.io-client'
 
-const SOCKET_BASE = import.meta.env.VITE_SOCKET_BASE || 'http://127.0.0.1:8000'
+const SOCKET_BASE = import.meta.env.VITE_SOCKET_BASE || 'https://samachauffeur.onrender.com'
 
 function connect(namespace: string): Socket | null {
   const token = localStorage.getItem('access')
