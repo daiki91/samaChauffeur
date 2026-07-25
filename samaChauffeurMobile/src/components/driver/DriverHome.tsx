@@ -9,6 +9,7 @@ import MapPreview from '@/components/map/MapPreview';
 import { useLocation } from '@/hooks/useLocation';
 import { useAuth } from '@/context/AuthContext';
 import { connectDriverSocket } from '@/lib/socket';
+import { startBackgroundLocationTracking, stopBackgroundLocationTracking, setBackgroundLocationSocket } from '@/lib/backgroundLocation';
 import { getAvailableTrips, claimTrip, setChauffeurAvailability, updateLocation } from '@/lib/api';
 import { colors, fonts, fontSizes, spacing } from '@/constants/theme';
 import type { Trip } from '@/types';
@@ -21,6 +22,7 @@ export default function DriverHome() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const socketRef = useRef<Socket | null>(null);
   const lastSent = useRef(0);
+  const lastPosition = useRef<{ lat: number; lng: number } | null>(null);
 
   const loadTrips = useCallback(async () => {
     try {
@@ -43,26 +45,42 @@ export default function DriverHome() {
       const socket = await connectDriverSocket();
       if (!socket || !active) return;
       socketRef.current = socket;
+      setBackgroundLocationSocket(socket);
       socket.on('message', (data: any) => {
         if (data.type === 'trip.requested') setTrips((t) => [data, ...t]);
         if (data.type === 'trip.assigned') setTrips((t) => t.filter((x) => x.id !== data.trip_id));
+      });
+      // A reconnect after a network blip shouldn't leave the passenger-facing map stale —
+      // re-emit the last known position as soon as the socket comes back up.
+      socket.on('connect', () => {
+        if (lastPosition.current) socket.emit('location.update', lastPosition.current);
       });
     })();
     return () => {
       active = false;
       socketRef.current?.disconnect();
       socketRef.current = null;
+      setBackgroundLocationSocket(null);
     };
   }, [online]);
 
   useEffect(() => {
     if (!online || !position) return;
+    lastPosition.current = { lat: position.lat, lng: position.lng };
     const now = Date.now();
     if (now - lastSent.current < 4000) return;
     lastSent.current = now;
     socketRef.current?.emit('location.update', { lat: position.lat, lng: position.lng });
     updateLocation(position.lat, position.lng).catch(() => {});
   }, [online, position]);
+
+  // Safety net: make sure background tracking never keeps running once this screen is
+  // gone (e.g. logout while online), even if toggleOnline's own stop call was missed.
+  useEffect(() => {
+    return () => {
+      stopBackgroundLocationTracking();
+    };
+  }, []);
 
   const toggleOnline = async () => {
     setToggling(true);
@@ -71,7 +89,12 @@ export default function DriverHome() {
       const res = await setChauffeurAvailability(next);
       updateChauffeur(res.data);
       setOnline(next);
-      if (next) loadTrips();
+      if (next) {
+        loadTrips();
+        startBackgroundLocationTracking();
+      } else {
+        stopBackgroundLocationTracking();
+      }
     } catch {
       // ignore
     } finally {

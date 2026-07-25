@@ -7,6 +7,9 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from '@/context/AuthContext';
 import { colors } from '@/constants/theme';
+// Registers the background location TaskManager task at module scope — must be imported
+// once, early, so the OS can find it even when the app is woken up in the background.
+import '@/lib/backgroundLocation';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 

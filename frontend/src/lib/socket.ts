@@ -25,3 +25,8 @@ export function connectDriversSocket() {
 export function connectTripSocket(tripId: number | string) {
   return connect(`/ws/realtime/trip/${tripId}`)
 }
+
+/** Any authenticated user — fire-and-forget presence heartbeat (mirrors ws/realtime/presence/) */
+export function connectPresenceSocket() {
+  return connect('/ws/realtime/presence')
+}

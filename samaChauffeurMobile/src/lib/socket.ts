@@ -8,6 +8,10 @@ async function connect(namespace: string): Promise<Socket | null> {
   return io(`${SOCKET_BASE}${namespace}`, {
     auth: { token },
     transports: ['websocket'],
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 10000,
   });
 }
 
@@ -19,3 +23,6 @@ export const connectDriversSocket = () => connect('/ws/realtime/drivers');
 
 /** Passenger/driver/admin of a given trip (mirrors ws/realtime/trip/<id>/) */
 export const connectTripSocket = (tripId: number | string) => connect(`/ws/realtime/trip/${tripId}`);
+
+/** Any authenticated user — fire-and-forget presence heartbeat (mirrors ws/realtime/presence/) */
+export const connectPresenceSocket = () => connect('/ws/realtime/presence');

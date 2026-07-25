@@ -35,6 +35,10 @@ export async function getMe() {
   return api.get('/auth/me/')
 }
 
+export async function getUsers() {
+  return api.get('/auth/users/')
+}
+
 // Response interceptor to auto-refresh token on 401
 let isRefreshing = false
 let failedQueue: any[] = []

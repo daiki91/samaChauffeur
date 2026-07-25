@@ -87,6 +87,7 @@ model User {
   isStaff       Boolean  @default(false) @map("is_staff")
   isActive      Boolean  @default(true) @map("is_active")
   dateJoined    DateTime @default(now()) @map("date_joined")
+  lastSeenAt    DateTime? @map("last_seen_at")
 
   chauffeur      Chauffeur?
   clientProfile  ClientProfile?
@@ -153,8 +154,21 @@ model Chauffeur {
 
   assignedTrips Trip[]
   payouts       Payout[]
+  locationPings ChauffeurLocationPing[]
 
   @@map("chauffeurs")
+}
+
+model ChauffeurLocationPing {
+  id          Int       @id @default(autoincrement())
+  chauffeurId Int       @map("chauffeur_id")
+  chauffeur   Chauffeur @relation(fields: [chauffeurId], references: [id], onDelete: Cascade)
+  latitude    Float
+  longitude   Float
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([chauffeurId, createdAt])
+  @@map("chauffeur_location_pings")
 }
 
 // ---------- courses (trips) ----------

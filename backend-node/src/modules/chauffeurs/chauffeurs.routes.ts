@@ -23,6 +23,10 @@ function toChauffeur(c: any) {
   }
 }
 
+function toLocationPing(p: any) {
+  return { id: p.id, latitude: p.latitude, longitude: p.longitude, created_at: p.createdAt.toISOString() }
+}
+
 function toChauffeurAvailable(c: any) {
   return {
     id: c.id,
@@ -226,6 +230,31 @@ router.post(
     if (!chauffeur) return res.status(404).json({ detail: 'Not found' })
     await prisma.chauffeur.update({ where: { id: pk }, data: { isVerified: true } })
     return res.json({ detail: 'Chauffeur verified.' })
+  }),
+)
+
+// ---------- GET /:id/location-history/?limit= (admin) ----------
+// NB: registered last so it can't shadow any of the more specific literal routes above
+// (Express matches route registration order, but this two-segment path only conflicts with
+// other two-segment "/:id/xxx" routes, of which there are none here).
+
+router.get(
+  '/:id/location-history/',
+  authenticate,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10)
+    if (Number.isNaN(id)) return res.status(400).json({ detail: 'Invalid chauffeur id' })
+
+    const limitRaw = parseInt(String(req.query.limit ?? '100'), 10)
+    const limit = Number.isNaN(limitRaw) ? 100 : Math.min(Math.max(limitRaw, 1), 500)
+
+    const pings = await prisma.chauffeurLocationPing.findMany({
+      where: { chauffeurId: id },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    })
+    return res.json(pings.map(toLocationPing))
   }),
 )
 

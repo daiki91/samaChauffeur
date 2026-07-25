@@ -23,7 +23,9 @@ export function useLocation(enabled = true) {
           setPosition({ lat: last.coords.latitude, lng: last.coords.longitude });
         }
         subscription.current = await Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.Balanced, timeInterval: 4000, distanceInterval: 15 },
+          // Matches the background tracker's cadence (see backgroundLocation.ts) so the
+          // foreground and background paths behave consistently for battery/network use.
+          { accuracy: Location.Accuracy.Balanced, timeInterval: 8000, distanceInterval: 25 },
           (loc) => {
             if (!cancelled) setPosition({ lat: loc.coords.latitude, lng: loc.coords.longitude });
           },

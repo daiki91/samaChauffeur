@@ -10,7 +10,9 @@ import DriverMap from './pages/Map/DriverMap'
 import AuthMenu from './components/AuthMenu'
 import ClientDashboard from './pages/Dashboard/ClientDashboard'
 import DriverDashboard from './pages/Driver/DriverDashboard'
+import AdminUsers from './pages/Admin/AdminUsers'
 import RequireClient from './components/RequireClient'
+import RequireAdmin from './components/RequireAdmin'
 import Button from './components/ui/Button'
 import './index.css'
 
@@ -110,6 +112,7 @@ const router = createBrowserRouter([
       { path: 'map', element: <DriverMap /> },
       { path: 'driver-map', element: <DriverDashboard /> },
       { path: 'dashboard', element: <RequireClient><ClientDashboard /></RequireClient> },
+      { path: 'admin/users', element: <RequireAdmin><AdminUsers /></RequireAdmin> },
     ],
   },
 ], ({
