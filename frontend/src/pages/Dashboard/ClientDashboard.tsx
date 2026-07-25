@@ -272,7 +272,7 @@ export default function ClientDashboard() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-      <h1 className="text-2xl font-bold text-stone-900 mb-1">Bonjour{user?.username ? `, ${user.username}` : ''} 👋</h1>
+      <h1 className="text-2xl font-bold text-stone-900 mb-1">{new Date().getHours() < 12 ? 'Bonjour' : 'Bonsoir'}{user?.username ? `, ${user.username}` : ''} 👋</h1>
       <p className="text-stone-500 mb-6">Où souhaitez-vous aller aujourd'hui ?</p>
 
       <div className="grid lg:grid-cols-5 gap-6 items-start">
