@@ -1,5 +1,5 @@
 import { createBrowserRouter, RouterProvider, Link, Navigate, Outlet } from 'react-router-dom'
-import { Car, MapPinned, ShieldCheck, Wallet } from 'lucide-react'
+import { Car, MapPinned, ShieldCheck, Wallet, Compass } from 'lucide-react'
 // OTP DISABLED for local dev — uncomment to re-enable.
 // import Phone from './pages/Auth/Phone'
 // import Verify from './pages/Auth/Verify'
@@ -116,10 +116,30 @@ function Home() {
   )
 }
 
+// Branded fallback shown for any URL that doesn't match a real route (typo, stale link,
+// removed page) — replaces react-router's default "Unexpected Application Error" screen.
+function NotFound() {
+  return (
+    <div className="min-h-[60vh] grid place-items-center text-center px-6">
+      <div>
+        <span className="grid place-items-center w-16 h-16 rounded-2xl bg-brand-50 text-brand-500 mx-auto mb-4">
+          <Compass size={28} />
+        </span>
+        <h1 className="text-2xl font-bold text-stone-900 mb-2">Page introuvable</h1>
+        <p className="text-stone-500 mb-6 max-w-sm">Cette page n'existe pas ou a été déplacée.</p>
+        <Link to="/">
+          <Button size="lg">Retour à l'accueil</Button>
+        </Link>
+      </div>
+    </div>
+  )
+}
+
 const router = createBrowserRouter([
   {
     path: '/',
     element: <Layout />,
+    errorElement: <NotFound />,
     children: [
       { index: true, element: <Home /> },
       // OTP DISABLED for local dev — uncomment to re-enable.
@@ -135,6 +155,7 @@ const router = createBrowserRouter([
       { path: 'admin', element: <RequireAdmin><AdminOverview /></RequireAdmin> },
       { path: 'admin/users', element: <RequireAdmin><AdminUsers /></RequireAdmin> },
       { path: 'account', element: <RequireAuth><Account /></RequireAuth> },
+      { path: '*', element: <NotFound /> },
     ],
   },
 ], ({
