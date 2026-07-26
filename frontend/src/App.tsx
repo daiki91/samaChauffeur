@@ -1,5 +1,5 @@
 import { createBrowserRouter, RouterProvider, Link, Navigate, Outlet } from 'react-router-dom'
-import { Car, MapPinned, ShieldCheck, Wallet } from 'lucide-react'
+import { Car, MapPinned, ShieldCheck, Wallet, Compass } from 'lucide-react'
 // OTP DISABLED for local dev — uncomment to re-enable.
 // import Phone from './pages/Auth/Phone'
 // import Verify from './pages/Auth/Verify'
@@ -12,6 +12,7 @@ import ClientDashboard from './pages/Dashboard/ClientDashboard'
 import Account from './pages/Account/Account'
 import DriverDashboard from './pages/Driver/DriverDashboard'
 import AdminUsers from './pages/Admin/AdminUsers'
+import AdminOverview from './pages/Admin/AdminOverview'
 import RequireClient from './components/RequireClient'
 import RequireAdmin from './components/RequireAdmin'
 import RequireAuth from './components/RequireAuth'
@@ -44,7 +45,6 @@ function Layout() {
 }
 
 // Redirects to the signed-in user's own space instead of the marketing landing page.
-// ADMIN has no dedicated dashboard yet, so it falls through to the landing page.
 function Home() {
   const { user, loading } = useAuth()
 
@@ -57,6 +57,7 @@ function Home() {
   }
   if (user?.role === 'CLIENT') return <Navigate to="/dashboard" replace />
   if (user?.role === 'CHAUFFEUR') return <Navigate to="/driver-map" replace />
+  if (user?.role === 'ADMIN') return <Navigate to="/admin" replace />
 
   return (
     <div>
@@ -115,10 +116,30 @@ function Home() {
   )
 }
 
+// Branded fallback shown for any URL that doesn't match a real route (typo, stale link,
+// removed page) — replaces react-router's default "Unexpected Application Error" screen.
+function NotFound() {
+  return (
+    <div className="min-h-[60vh] grid place-items-center text-center px-6">
+      <div>
+        <span className="grid place-items-center w-16 h-16 rounded-2xl bg-brand-50 text-brand-500 mx-auto mb-4">
+          <Compass size={28} />
+        </span>
+        <h1 className="text-2xl font-bold text-stone-900 mb-2">Page introuvable</h1>
+        <p className="text-stone-500 mb-6 max-w-sm">Cette page n'existe pas ou a été déplacée.</p>
+        <Link to="/">
+          <Button size="lg">Retour à l'accueil</Button>
+        </Link>
+      </div>
+    </div>
+  )
+}
+
 const router = createBrowserRouter([
   {
     path: '/',
     element: <Layout />,
+    errorElement: <NotFound />,
     children: [
       { index: true, element: <Home /> },
       // OTP DISABLED for local dev — uncomment to re-enable.
@@ -131,8 +152,10 @@ const router = createBrowserRouter([
       { path: 'map', element: <DriverMap /> },
       { path: 'driver-map', element: <RequireChauffeur><DriverDashboard /></RequireChauffeur> },
       { path: 'dashboard', element: <RequireClient><ClientDashboard /></RequireClient> },
+      { path: 'admin', element: <RequireAdmin><AdminOverview /></RequireAdmin> },
       { path: 'admin/users', element: <RequireAdmin><AdminUsers /></RequireAdmin> },
       { path: 'account', element: <RequireAuth><Account /></RequireAuth> },
+      { path: '*', element: <NotFound /> },
     ],
   },
 ], ({

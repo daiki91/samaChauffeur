@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import prisma from '../../lib/prisma'
 import { asyncHandler } from '../../utils/asyncHandler'
-import { authenticate } from '../../middleware/auth'
+import { authenticate, requireAdmin } from '../../middleware/auth'
 import { haversine } from '../../utils/haversine'
 import { estimatePrice, NoPricingRuleError } from '../pricing/pricing.service'
 import { broadcastToDrivers, broadcastToTrip } from '../../realtime/socket'
@@ -135,6 +135,33 @@ router.get(
       include: { driver: { include: { user: true, vehicle: true } } },
     })
     return res.json(trips.map(toTrip))
+  }),
+)
+
+// ---------- GET /admin/all/ (admin) ----------
+// Full trip list for the admin overview dashboard — includes both the passenger and driver
+// identities so the table doesn't need a second round-trip per row.
+
+function toTripAdmin(t: any) {
+  return {
+    ...toTrip(t),
+    passenger_detail: t.passenger ? { id: t.passenger.id, username: t.passenger.username, phone: t.passenger.phone } : null,
+  }
+}
+
+router.get(
+  '/admin/all/',
+  authenticate,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const limitRaw = parseInt(String(req.query.limit ?? '200'), 10)
+    const limit = Number.isNaN(limitRaw) ? 200 : Math.min(Math.max(limitRaw, 1), 1000)
+    const trips = await prisma.trip.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      include: { driver: { include: { user: true, vehicle: true } }, passenger: true },
+    })
+    return res.json(trips.map(toTripAdmin))
   }),
 )
 

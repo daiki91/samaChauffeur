@@ -4,8 +4,6 @@ import DriverMap from '../Map/DriverMap'
 import {
   getAvailableChauffeurs,
   getMyTrips,
-  getTransactions,
-  getPaymentsSummary,
   createTrip,
   makePayment,
   estimatePrice,
@@ -26,7 +24,7 @@ import { haversineKm } from '../../lib/geo'
 import { reverseGeocode } from '../../lib/geocode'
 import { useGeolocation } from '../../lib/useGeolocation'
 import { connectTripSocket } from '../../lib/socket'
-import { MapPinned, Wallet } from 'lucide-react'
+import { MapPinned } from 'lucide-react'
 
 const TERMINAL_STATUSES = ['COMPLETED', 'CANCELLED']
 
@@ -40,8 +38,6 @@ export default function ClientDashboard() {
   const { user } = useAuth()
   const [drivers, setDrivers] = useState<any[]>([])
   const [trips, setTrips] = useState<any[]>([])
-  const [transactions, setTransactions] = useState<any[]>([])
-  const [paymentsSummary, setPaymentsSummary] = useState<any | null>(null)
   const [modalTrip, setModalTrip] = useState<any | null>(null)
   const { addToast } = useToasts()
   const { position: myPosition } = useGeolocation()
@@ -74,14 +70,6 @@ export default function ClientDashboard() {
         setTrips(t.data)
         const ongoing = t.data.find((trip: ActiveTrip) => !TERMINAL_STATUSES.includes(trip.status))
         if (ongoing) setActiveTrip(ongoing)
-      } catch (e) {}
-      try {
-        const p = await getTransactions()
-        setTransactions(p.data)
-      } catch (e) {}
-      try {
-        const s = await getPaymentsSummary()
-        setPaymentsSummary(s.data)
       } catch (e) {}
     }
     load()
@@ -203,10 +191,6 @@ export default function ClientDashboard() {
     try {
       await makePayment({ amount, currency: 'XOF', method, metadata: { trip_id: modalTrip.id } })
       addToast({ message: 'Paiement enregistré. En attente de validation par le chauffeur.', tone: 'info' })
-      const p = await getPaymentsSummary()
-      setPaymentsSummary(p.data)
-      const tx = await getTransactions()
-      setTransactions(tx.data)
     } catch (e: any) {
       addToast({ message: e?.response?.data?.detail || 'Erreur paiement', tone: 'error' })
     }

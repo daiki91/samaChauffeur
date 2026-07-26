@@ -39,6 +39,18 @@ export async function getUsers() {
   return api.get('/auth/users/')
 }
 
+export async function getAdminChauffeurs() {
+  return api.get('/chauffeurs/admin/chauffeurs/')
+}
+
+export async function getAdminVehicles() {
+  return api.get('/chauffeurs/vehicles/')
+}
+
+export async function getAdminTrips(limit = 200) {
+  return api.get(`/trips/admin/all/?limit=${limit}`)
+}
+
 // Response interceptor to auto-refresh token on 401
 let isRefreshing = false
 let failedQueue: any[] = []

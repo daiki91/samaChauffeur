@@ -3,6 +3,7 @@ import { z } from 'zod'
 import prisma from '../../lib/prisma'
 import { asyncHandler } from '../../utils/asyncHandler'
 import { authenticate, requireAdmin, requireClient } from '../../middleware/auth'
+import { isOnline } from '../../realtime/presence'
 
 const router = Router()
 
@@ -20,6 +21,16 @@ function toChauffeur(c: any) {
     vehicle: toVehicle(c.vehicle),
     is_verified: c.isVerified,
     is_available: c.isAvailable,
+  }
+}
+
+// Admin listing view — adds the linked user's identity + live presence on top of toChauffeur().
+function toChauffeurAdmin(c: any) {
+  return {
+    ...toChauffeur(c),
+    username: c.user?.username,
+    phone: c.user?.phone,
+    is_online: isOnline(c.userId),
   }
 }
 
@@ -115,8 +126,8 @@ router.get(
   authenticate,
   requireAdmin,
   asyncHandler(async (_req, res) => {
-    const chauffeurs = await prisma.chauffeur.findMany({ include: { vehicle: true }, orderBy: { id: 'asc' } })
-    return res.json(chauffeurs.map(toChauffeur))
+    const chauffeurs = await prisma.chauffeur.findMany({ include: { vehicle: true, user: true }, orderBy: { id: 'asc' } })
+    return res.json(chauffeurs.map(toChauffeurAdmin))
   }),
 )
 
