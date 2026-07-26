@@ -51,6 +51,14 @@ export async function getAdminVehicles() {
   return api.get('/chauffeurs/vehicles/')
 }
 
+export async function updateAdminChauffeur(id: number, payload: { is_verified?: boolean; is_available?: boolean; vehicle?: number | null }) {
+  return api.patch(`/chauffeurs/admin/chauffeurs/${id}/`, payload)
+}
+
+export async function deleteAdminChauffeur(id: number) {
+  return api.delete(`/chauffeurs/admin/chauffeurs/${id}/`)
+}
+
 export async function getAdminTrips(limit = 200) {
   return api.get(`/trips/admin/all/?limit=${limit}`)
 }
