@@ -108,20 +108,20 @@ export default function AdminUsers() {
         </Badge>
       </div>
 
-      <Card padded={false}>
+      <Card padded={false} className="flex flex-col max-h-[60vh] overflow-hidden">
         <div className="flex items-center gap-2 px-5 pt-4 pb-2">
           <Users size={18} className="text-brand-600" />
           <h2 className="font-semibold text-stone-800">Utilisateurs</h2>
         </div>
 
         {loading ? (
-          <div className="py-16 grid place-items-center">
+          <div className="flex-1 min-h-0 overflow-y-auto py-16 grid place-items-center">
             <Spinner size={28} />
           </div>
         ) : users.length === 0 ? (
-          <p className="text-sm text-stone-400 py-10 text-center">Aucun utilisateur.</p>
+          <p className="flex-1 min-h-0 overflow-y-auto text-sm text-stone-400 py-10 text-center">Aucun utilisateur.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="flex-1 min-h-0 overflow-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-stone-400 border-t border-stone-100">

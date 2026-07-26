@@ -97,6 +97,9 @@ function formatElapsed(sec: number) {
 
 type Props = {
   activeTrip: ActiveTrip | null
+  completedTrip: ActiveTrip | null
+  completedPaymentStatus: string | null
+  onPayCompleted: (trip: ActiveTrip) => void
 
   // idle booking form (state owned by the parent dashboard, unchanged)
   originText: string
@@ -129,6 +132,9 @@ type Props = {
 
 export default function RideStatusBar({
   activeTrip,
+  completedTrip,
+  completedPaymentStatus,
+  onPayCompleted,
   originText,
   destinationText,
   onOriginChange,
@@ -186,6 +192,43 @@ export default function RideStatusBar({
       clearInterval(id)
     }
   }, [waiting, waitOriginLat, waitOriginLng])
+
+  // ---------- Completed: show payment button ----------
+  if (!activeTrip && completedTrip) {
+    const priceLabel = completedTrip.price != null ? `— ${completedTrip.price.toLocaleString('fr-FR')} XOF` : ''
+    const isPending = completedPaymentStatus === 'PENDING'
+    const isFailed = completedPaymentStatus === 'FAILED'
+    return (
+      <div>
+        <h2 className="font-semibold text-stone-800 mb-4 flex items-center gap-2">
+          <Navigation size={18} className="text-brand-600" />
+          Course terminée
+        </h2>
+        <div className="rounded-xl bg-green-50 border border-green-100 px-4 py-4 mb-4">
+          <div className="text-sm text-green-700 font-medium">Merci ! Votre course est terminée.</div>
+          <div className="text-xs text-green-600 mt-1">
+            {completedTrip.origin.split(",").slice(0,1).join("")} → {completedTrip.destination.split(",").slice(0,1).join("")}
+          </div>
+          {completedTrip.price != null && (
+            <div className="text-sm font-bold text-green-800 mt-2">{priceLabel}</div>
+          )}
+        </div>
+        {isPending && (
+          <div className="rounded-xl bg-amber-50 border border-amber-100 px-4 py-3 mb-3 text-sm text-amber-700 text-center">
+            Paiement envoyé — en attente de validation par le chauffeur…
+          </div>
+        )}
+        {isFailed && (
+          <div className="rounded-xl bg-red-50 border border-red-100 px-4 py-3 mb-3 text-sm text-red-700 text-center">
+            Le paiement précédent a échoué. Vous pouvez réessayer.
+          </div>
+        )}
+        <Button fullWidth size="lg" disabled={isPending} onClick={() => onPayCompleted(completedTrip)}>
+          {isPending ? 'Paiement en attente…' : 'Payer cette course'}
+        </Button>
+      </div>
+    )
+  }
 
   // ---------- Idle: current booking form ----------
   if (!activeTrip) {
