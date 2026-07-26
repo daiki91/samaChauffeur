@@ -326,6 +326,16 @@ select 'BUS', 'BUS', null, 50, true
 where not exists (select 1 from "pricing_rules" where vehicle_type = 'BUS' and mode = 'BUS' and region is null);
 
 -- ============================================================================
+-- Compte administrateur par défaut
+-- Téléphone 770001122 / mot de passe passer123 (hash bcrypt précalculé, cost 10).
+-- Peut créer d'autres admins depuis /admin/users (POST /api/auth/users/).
+-- ============================================================================
+
+insert into "users" (username, phone, password, role, phone_verified)
+select 'admin', '770001122', '$2b$10$0dj1nrT9HZnc2JGHkpcCxes7NRoFMtCmKOtagRKPENjLiq961nqlm', 'ADMIN', true
+where not exists (select 1 from "users" where phone = '770001122');
+
+-- ============================================================================
 -- Fin — vérification rapide
 -- ============================================================================
 -- select table_name from information_schema.tables where table_schema = 'public' order by 1;

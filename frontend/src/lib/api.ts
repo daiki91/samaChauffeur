@@ -39,6 +39,10 @@ export async function getUsers() {
   return api.get('/auth/users/')
 }
 
+export async function createUser(payload: { username: string; phone: string; password: string; role?: string; language?: string }) {
+  return api.post('/auth/users/', payload)
+}
+
 export async function getAdminChauffeurs() {
   return api.get('/chauffeurs/admin/chauffeurs/')
 }
