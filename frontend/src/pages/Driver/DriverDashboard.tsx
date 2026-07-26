@@ -306,23 +306,6 @@ export default function DriverDashboard() {
         </Card>
 
         <Card className="lg:col-span-2">
-<<<<<<< HEAD
-          <h2 className="font-semibold text-stone-800 mb-3 flex items-center gap-2">
-            <RouteIcon size={18} className="text-brand-600" />
-            Courses disponibles
-          </h2>
-          {trips.length === 0 && <p className="text-sm text-stone-400 py-6 text-center">Aucune course en attente pour l'instant.</p>}
-          <ul className="space-y-2.5">
-            {trips.map((t) => (
-              <li key={t.id} className="rounded-xl border border-stone-100 p-3 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-sm font-medium text-stone-800 truncate">
-                    {t.origin.split(",").slice(0,1).join("")} → {t.destination.split(",").slice(0,1).join("")}
-                  </div>
-                  <div className="text-xs text-stone-400 mt-0.5">
-                    {t.distance_km ? `${Number(t.distance_km).toFixed(1)} km` : '—'} · {t.price ? `${t.price} XOF` : 'Prix non estimé'}
-                  </div>
-=======
           {activeTrip ? (
             <div>
               <h2 className="font-semibold text-stone-800 mb-3 flex items-center gap-2">
@@ -334,7 +317,6 @@ export default function DriverDashboard() {
               <div className="rounded-xl bg-stone-50 border border-stone-100 px-4 py-3 mb-4 space-y-1.5">
                 <div className="text-sm text-stone-700 truncate">
                   <span className="font-medium">{activeTrip.origin}</span>
->>>>>>> 5d983f746350bb75d490db6571e3e9e6b7779d17
                 </div>
                 <div className="text-sm text-stone-700 truncate">→ <span className="font-medium">{activeTrip.destination}</span></div>
                 <div className="text-xs text-stone-400 mt-1">
