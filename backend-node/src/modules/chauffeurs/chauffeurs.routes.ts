@@ -1,8 +1,9 @@
 import { Router } from 'express'
 import { z } from 'zod'
+import PDFDocument from 'pdfkit'
 import prisma from '../../lib/prisma'
 import { asyncHandler } from '../../utils/asyncHandler'
-import { authenticate, requireAdmin, requireClient } from '../../middleware/auth'
+import { authenticate, requireAdmin, requireChauffeur, requireClient } from '../../middleware/auth'
 import { isOnline } from '../../realtime/presence'
 
 const router = Router()
@@ -300,6 +301,291 @@ router.post(
     if (!chauffeur) return res.status(404).json({ detail: 'Not found' })
     await prisma.chauffeur.update({ where: { id: pk }, data: { isVerified: true } })
     return res.json({ detail: 'Chauffeur verified.' })
+  }),
+)
+
+// ---------- POST /reject/:pk/ (admin) ----------
+// Rejects a pending chauffeur application: deletes the chauffeur profile and
+// reverts the user back to CLIENT so they can re-apply later.
+
+router.post(
+  '/reject/:pk/',
+  authenticate,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const pk = parseInt(req.params.pk, 10)
+    const chauffeur = await prisma.chauffeur.findUnique({ where: { id: pk } })
+    if (!chauffeur) return res.status(404).json({ detail: 'Not found' })
+
+    await prisma.chauffeur.delete({ where: { id: pk } })
+    await prisma.user.update({ where: { id: chauffeur.userId }, data: { role: 'CLIENT' } })
+
+    return res.json({ detail: 'Chauffeur rejected.' })
+  }),
+)
+
+// ---------- GET /stats/ and /stats/report.pdf (chauffeur) ----------
+// "Espace chauffeur" — earnings/distance dashboard for a chosen period, and a matching PDF export.
+
+const statsQuerySchema = z.object({
+  from: z.string().min(1),
+  to: z.string().min(1),
+})
+
+const MONTHS_FR_SHORT = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.']
+
+async function computeStats(chauffeurId: number, from: Date, to: Date) {
+  const trips = await prisma.trip.findMany({
+    where: { driverId: chauffeurId, status: 'COMPLETED', endedAt: { gte: from, lte: to } },
+    orderBy: { endedAt: 'asc' },
+    select: { price: true, distanceKm: true, endedAt: true },
+  })
+
+  const totalTrips = trips.length
+  const totalDistanceKm = trips.reduce((sum, t) => sum + (t.distanceKm ?? 0), 0)
+  const totalEarnings = trips.reduce((sum, t) => sum + (t.price ?? 0), 0)
+  const averagePrice = totalTrips > 0 ? Math.round(totalEarnings / totalTrips) : 0
+
+  // Bucket granularity auto-scales with the span so the breakdown stays readable
+  // whether it's a single day or a full year. The grouping/sort key stays ISO-based
+  // (lexicographically sortable); the display label is derived separately so it never
+  // repeats information the period selection already made obvious (e.g. no need to
+  // spell out today's date next to every hour when the "Jour" preset is selected).
+  const spanDays = (to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)
+  const bucketKey = (d: Date): string => {
+    const iso = d.toISOString()
+    if (spanDays <= 2) return iso.slice(0, 13) // hour bucket
+    if (spanDays <= 45) return iso.slice(0, 10) // day
+    if (spanDays <= 400) return iso.slice(0, 7) // month
+    return iso.slice(0, 4) // year
+  }
+  const bucketDisplayLabel = (d: Date): string => {
+    if (spanDays <= 2) return `${String(d.getUTCHours()).padStart(2, '0')}h`
+    if (spanDays <= 45) return `${d.getUTCDate()} ${MONTHS_FR_SHORT[d.getUTCMonth()]}`
+    if (spanDays <= 400) return `${MONTHS_FR_SHORT[d.getUTCMonth()]} ${d.getUTCFullYear()}`
+    return String(d.getUTCFullYear())
+  }
+
+  const buckets = new Map<string, { trips: number; distance_km: number; earnings: number; sample: Date }>()
+  for (const t of trips) {
+    const d = t.endedAt as Date
+    const key = bucketKey(d)
+    const b = buckets.get(key) ?? { trips: 0, distance_km: 0, earnings: 0, sample: d }
+    b.trips += 1
+    b.distance_km += t.distanceKm ?? 0
+    b.earnings += t.price ?? 0
+    buckets.set(key, b)
+  }
+  const breakdown = Array.from(buckets.entries())
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([, v]) => ({
+      label: bucketDisplayLabel(v.sample),
+      trips: v.trips,
+      distance_km: Math.round(v.distance_km * 10) / 10,
+      earnings: v.earnings,
+    }))
+
+  return {
+    total_trips: totalTrips,
+    total_distance_km: Math.round(totalDistanceKm * 10) / 10,
+    total_earnings: totalEarnings,
+    average_price: averagePrice,
+    breakdown,
+  }
+}
+
+function parseStatsRange(query: any): { from: Date; to: Date } | null {
+  const parsed = statsQuerySchema.safeParse(query)
+  if (!parsed.success) return null
+  const from = new Date(parsed.data.from)
+  const to = new Date(parsed.data.to)
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return null
+  return { from, to }
+}
+
+router.get(
+  '/stats/',
+  authenticate,
+  requireChauffeur,
+  asyncHandler(async (req, res) => {
+    const range = parseStatsRange(req.query)
+    if (!range) return res.status(400).json({ detail: 'Invalid or missing from/to date' })
+
+    const chauffeur = await prisma.chauffeur.findUnique({ where: { userId: req.user!.id } })
+    if (!chauffeur) return res.status(400).json({ detail: 'No chauffeur profile' })
+
+    const stats = await computeStats(chauffeur.id, range.from, range.to)
+    return res.json({ from: range.from.toISOString(), to: range.to.toISOString(), ...stats })
+  }),
+)
+
+router.get(
+  '/stats/report.pdf',
+  authenticate,
+  requireChauffeur,
+  asyncHandler(async (req, res) => {
+    const range = parseStatsRange(req.query)
+    if (!range) return res.status(400).json({ detail: 'Invalid or missing from/to date' })
+    const { from, to } = range
+
+    const chauffeur = await prisma.chauffeur.findUnique({ where: { userId: req.user!.id }, include: { user: true, vehicle: true } })
+    if (!chauffeur) return res.status(400).json({ detail: 'No chauffeur profile' })
+
+    const stats = await computeStats(chauffeur.id, from, to)
+    const fmt = (d: Date) => d.toLocaleDateString('fr-FR')
+    // Manual thousands separator with a plain space (U+0020) — Intl's 'fr-FR' grouping uses a
+    // narrow no-break space (U+202F) that pdfkit's default Helvetica/WinAnsi can't render,
+    // same class of bug as the "→" glyph below.
+    const fmtNum = (n: number) => n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
+
+    const filename = `bilan-${from.toISOString().slice(0, 10)}_${to.toISOString().slice(0, 10)}.pdf`
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+
+    // samaChauffeur brand palette (mirrors frontend/tailwind.config.cjs).
+    const C = {
+      brand700: '#b23409',
+      brand600: '#d6440a',
+      brand500: '#f2590e',
+      brand100: '#ffe6d5',
+      brand50: '#fff4ed',
+      secondary700: '#126442',
+      secondary600: '#157d51',
+      secondary50: '#eefbf3',
+      accent600: '#de9a1f',
+      accent500: '#f6b93b',
+      stone900: '#1c1917',
+      stone700: '#44403c',
+      stone500: '#78716c',
+      stone200: '#e7e5e4',
+      stone50: '#fafaf9',
+      white: '#ffffff',
+    }
+
+    const doc = new PDFDocument({ size: 'A4', margins: { top: 0, bottom: 40, left: 50, right: 50 } })
+    doc.pipe(res)
+
+    const pageWidth = doc.page.width
+    const contentRight = pageWidth - 50
+
+    let pageNum = 1
+    function addFooter() {
+      const h = doc.page.height
+      // pdfkit auto-inserts a page if a text call's y + line-height would cross
+      // `page.height - margins.bottom` — so the footer text needs real headroom above
+      // that boundary, not just above the bottom edge of the page.
+      doc.moveTo(50, h - 70).lineTo(contentRight, h - 70).lineWidth(1).strokeColor(C.stone200).stroke()
+      doc.font('Helvetica').fontSize(8).fillColor(C.stone500)
+      doc.text('samaChauffeur — Bilan généré automatiquement', 50, h - 60, { width: 300 })
+      doc.text(`Page ${pageNum}`, contentRight - 100, h - 60, { width: 100, align: 'right' })
+      pageNum += 1
+    }
+
+    // ---- Header band ----
+    const headerHeight = 100
+    const gradient = doc.linearGradient(0, 0, pageWidth, headerHeight)
+    gradient.stop(0, C.brand700).stop(0.6, C.brand500).stop(1, C.accent500)
+    doc.rect(0, 0, pageWidth, headerHeight).fill(gradient)
+    doc.fillColor(C.white).font('Helvetica-Bold').fontSize(24).text('samaChauffeur', 50, 32)
+    doc.fillColor(C.brand100).font('Helvetica').fontSize(12).text('Bilan financier chauffeur', 50, 63)
+
+    let y = headerHeight + 24
+
+    // ---- Info card (chauffeur identity + period) ----
+    const infoHeight = chauffeur.vehicle ? 78 : 60
+    doc.roundedRect(50, y, contentRight - 50, infoHeight, 8).fill(C.stone50)
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(C.stone900).text('CHAUFFEUR', 66, y + 14)
+    doc.font('Helvetica').fontSize(10).fillColor(C.stone700)
+    doc.text(`${chauffeur.user.username} · ${chauffeur.user.phone}`, 66, y + 30)
+    if (chauffeur.vehicle) doc.text(`Véhicule : ${chauffeur.vehicle.plateNumber}`, 66, y + 46)
+
+    const rightColX = pageWidth - 270
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(C.stone900).text('PÉRIODE', rightColX, y + 14, { width: 220, align: 'right' })
+    doc.font('Helvetica').fontSize(10).fillColor(C.stone700)
+    // Plain hyphen, not "→" — same WinAnsi glyph limitation as above.
+    doc.text(`${fmt(from)} - ${fmt(to)}`, rightColX, y + 30, { width: 220, align: 'right' })
+    doc.text(`Généré le ${fmt(new Date())}`, rightColX, y + 46, { width: 220, align: 'right' })
+
+    y += infoHeight + 24
+
+    // ---- KPI cards ----
+    const kpis = [
+      { label: 'COURSES TERMINÉES', value: fmtNum(stats.total_trips), color: C.stone900 },
+      { label: 'DISTANCE PARCOURUE', value: `${fmtNum(stats.total_distance_km)} km`, color: C.brand600 },
+      { label: 'MONTANT GAGNÉ', value: `${fmtNum(stats.total_earnings)} XOF`, color: C.secondary600 },
+      { label: 'PRIX MOYEN / COURSE', value: `${fmtNum(stats.average_price)} XOF`, color: C.accent600 },
+    ]
+    const kpiGap = 12
+    const kpiWidth = (contentRight - 50 - kpiGap * 3) / 4
+    const kpiHeight = 62
+    kpis.forEach((k, i) => {
+      const x = 50 + i * (kpiWidth + kpiGap)
+      doc.roundedRect(x, y, kpiWidth, kpiHeight, 8).lineWidth(1).fillAndStroke(C.white, C.stone200)
+      doc.roundedRect(x, y, 4, kpiHeight, 2).fill(k.color)
+      doc.font('Helvetica').fontSize(7.5).fillColor(C.stone500).text(k.label, x + 12, y + 12, { width: kpiWidth - 20 })
+      doc.font('Helvetica-Bold').fontSize(13).fillColor(k.color).text(k.value, x + 12, y + 30, { width: kpiWidth - 18 })
+    })
+    y += kpiHeight + 30
+
+    // ---- Breakdown table ----
+    doc.roundedRect(50, y, 4, 15, 2).fill(C.brand500)
+    doc.font('Helvetica-Bold').fontSize(13).fillColor(C.stone900).text('Détail par période', 62, y - 1)
+    y += 28
+
+    const colX = [50, 250, 370, 460]
+    const colW = [190, 110, 90, 80]
+    const rowH = 22
+    const pageBottom = doc.page.height - 80
+
+    function tableHeader(yy: number) {
+      doc.roundedRect(50, yy, contentRight - 50, rowH, 4).fill(C.brand500)
+      doc.font('Helvetica-Bold').fontSize(8.5).fillColor(C.white)
+      doc.text('PÉRIODE', colX[0] + 10, yy + 7, { width: colW[0] - 10 })
+      doc.text('COURSES', colX[1], yy + 7, { width: colW[1], align: 'right' })
+      doc.text('DISTANCE (KM)', colX[2], yy + 7, { width: colW[2], align: 'right' })
+      doc.text('GAINS (XOF)', colX[3], yy + 7, { width: colW[3] - 10, align: 'right' })
+    }
+
+    tableHeader(y)
+    y += rowH
+
+    if (stats.breakdown.length === 0) {
+      doc.font('Helvetica').fontSize(9.5).fillColor(C.stone500)
+      doc.text('Aucune course terminée sur cette période.', colX[0] + 10, y + 6)
+      y += rowH
+    }
+
+    stats.breakdown.forEach((b, i) => {
+      if (y > pageBottom) {
+        addFooter()
+        doc.addPage()
+        y = 50
+        tableHeader(y)
+        y += rowH
+      }
+      if (i % 2 === 1) doc.rect(50, y, contentRight - 50, rowH).fill(C.stone50)
+      doc.font('Helvetica').fontSize(9.5).fillColor(C.stone700)
+      doc.text(b.label, colX[0] + 10, y + 6, { width: colW[0] - 10 })
+      doc.text(fmtNum(b.trips), colX[1], y + 6, { width: colW[1], align: 'right' })
+      doc.text(fmtNum(b.distance_km), colX[2], y + 6, { width: colW[2], align: 'right' })
+      doc.text(fmtNum(b.earnings), colX[3], y + 6, { width: colW[3] - 10, align: 'right' })
+      y += rowH
+    })
+
+    if (y > pageBottom) {
+      addFooter()
+      doc.addPage()
+      y = 50
+    }
+    doc.roundedRect(50, y, contentRight - 50, rowH + 6, 4).fill(C.secondary50)
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(C.secondary700)
+    doc.text('TOTAL', colX[0] + 10, y + 9, { width: colW[0] - 10 })
+    doc.text(fmtNum(stats.total_trips), colX[1], y + 9, { width: colW[1], align: 'right' })
+    doc.text(fmtNum(stats.total_distance_km), colX[2], y + 9, { width: colW[2], align: 'right' })
+    doc.text(fmtNum(stats.total_earnings), colX[3], y + 9, { width: colW[3] - 10, align: 'right' })
+
+    addFooter()
+    doc.end()
   }),
 )
 

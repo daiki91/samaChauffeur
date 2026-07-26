@@ -27,4 +27,14 @@ export async function endTrip(id: number) {
   return api.post(`/trips/${id}/end/`)
 }
 
-export default { getAvailableTrips, claimTrip, getMyActiveTrip, acceptTrip, startTrip, endTrip }
+/** "Espace chauffeur" stats — distance/earnings/trip count for a chosen date range. */
+export async function getDriverStats(from: string, to: string) {
+  return api.get('/chauffeurs/stats/', { params: { from, to } })
+}
+
+/** Same period, rendered as a downloadable PDF (server-generated, streamed as a blob). */
+export async function downloadDriverReport(from: string, to: string) {
+  return api.get('/chauffeurs/stats/report.pdf', { params: { from, to }, responseType: 'blob' })
+}
+
+export default { getAvailableTrips, claimTrip, getMyActiveTrip, acceptTrip, startTrip, endTrip, getDriverStats, downloadDriverReport }

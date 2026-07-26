@@ -6,6 +6,7 @@ import {
   getMyTrips,
   createTrip,
   makePayment,
+  getTransactions,
   estimatePrice,
   cancelTrip,
   getTrip,
@@ -16,7 +17,6 @@ import PaymentModal from '../../components/PaymentModal'
 import { useToasts } from '../../components/Toasts'
 import { useAuth } from '../../context/AuthContext'
 import Card from '../../components/ui/Card'
-import Button from '../../components/ui/Button'
 import Badge from '../../components/ui/Badge'
 import RideStatusBar, { type ActiveTrip } from '../../components/RideStatusBar'
 import { getRoute, type Route } from '../../lib/routing'
@@ -54,6 +54,8 @@ export default function ClientDashboard() {
   const [paymentMethod, setPaymentMethod] = useState('CASH')
 
   const [activeTrip, setActiveTrip] = useState<ActiveTrip | null>(null)
+  const [completedTrip, setCompletedTrip] = useState<ActiveTrip | null>(null)
+  const [completedTripPayment, setCompletedTripPayment] = useState<{ id: number; status: string } | null>(null)
   const [cancelling, setCancelling] = useState(false)
   const [changingVehicleType, setChangingVehicleType] = useState(false)
   const [changingPaymentMethod, setChangingPaymentMethod] = useState(false)
@@ -88,6 +90,13 @@ export default function ClientDashboard() {
       try {
         const r = await getTrip(activeTrip.id)
         if (TERMINAL_STATUSES.includes(r.data.status)) {
+          if (r.data.status === 'COMPLETED') {
+            setCompletedTrip(r.data)
+            await refreshCompletedTripPayment(r.data.id)
+          } else {
+            setCompletedTrip(null)
+            setCompletedTripPayment(null)
+          }
           setActiveTrip(null)
           resetRouteForm()
           addToast({
@@ -147,6 +156,38 @@ export default function ClientDashboard() {
     setDestinationPoint(null)
   }
 
+  // Looks up the most recent transaction the passenger created for a given trip, so the
+  // "Payer cette course" button can reflect whether one is already pending/failed/paid.
+  const refreshCompletedTripPayment = async (tripId: number) => {
+    try {
+      const t = await getTransactions()
+      const mine = t.data.filter((tx: any) => Number(tx.metadata?.trip_id) === tripId)
+      setCompletedTripPayment(mine[0] || null)
+    } catch (e) {}
+  }
+
+  // While a payment is pending, poll for the driver's validation so the passenger's screen
+  // clears automatically once it's confirmed (or lets them retry if it failed).
+  useEffect(() => {
+    if (!completedTrip || completedTripPayment?.status !== 'PENDING') return
+    const id = setInterval(async () => {
+      const t = await getTransactions().catch(() => null)
+      if (!t) return
+      const mine = t.data.filter((tx: any) => Number(tx.metadata?.trip_id) === completedTrip.id)
+      const latest = mine[0] || null
+      if (latest?.status === 'COMPLETED') {
+        setCompletedTrip(null)
+        setCompletedTripPayment(null)
+        addToast({ message: 'Paiement validé par le chauffeur. Merci !', tone: 'success' })
+        const t2 = await getMyTrips()
+        setTrips(t2.data)
+      } else {
+        setCompletedTripPayment(latest)
+      }
+    }, 5000)
+    return () => clearInterval(id)
+  }, [completedTrip, completedTripPayment?.status])
+
   const canRequest = !!originPoint && !!destinationPoint && !submitting
 
   const requestTrip = async (e: React.FormEvent) => {
@@ -169,6 +210,8 @@ export default function ClientDashboard() {
       })
       const trip = resp.data
       setActiveTrip(trip)
+      setCompletedTrip(null)
+      setCompletedTripPayment(null)
       addToast({
         message: trip.price
           ? `Course créée — estimation ${trip.price} XOF (${trip.distance_km?.toFixed?.(1) ?? '—'} km). En attente d'un chauffeur.`
@@ -186,10 +229,18 @@ export default function ClientDashboard() {
     }
   }
 
+  const handlePayCompleted = (trip: ActiveTrip) => {
+    // Guard against re-opening the modal while a payment is already pending/paid — the
+    // button itself is disabled in that case, this just backs it up.
+    if (completedTripPayment && completedTripPayment.status !== 'FAILED') return
+    setModalTrip(trip)
+  }
+
   const payForTrip = async (amount: number, method: string) => {
     if (!modalTrip) return
     try {
-      await makePayment({ amount, currency: 'XOF', method, metadata: { trip_id: modalTrip.id } })
+      const resp = await makePayment({ amount, currency: 'XOF', method, metadata: { trip_id: modalTrip.id } })
+      setCompletedTripPayment(resp.data)
       addToast({ message: 'Paiement enregistré. En attente de validation par le chauffeur.', tone: 'info' })
     } catch (e: any) {
       addToast({ message: e?.response?.data?.detail || 'Erreur paiement', tone: 'error' })
@@ -202,6 +253,8 @@ export default function ClientDashboard() {
     try {
       await cancelTrip(activeTrip.id)
       setActiveTrip(null)
+      setCompletedTrip(null)
+      setCompletedTripPayment(null)
       resetRouteForm()
       addToast({ message: 'Course annulée.', tone: 'info' })
       const t = await getMyTrips()
@@ -282,6 +335,9 @@ export default function ClientDashboard() {
         <Card className="lg:col-span-2 lg:top-20">
           <RideStatusBar
             activeTrip={activeTrip}
+            completedTrip={completedTrip}
+            completedPaymentStatus={completedTripPayment?.status ?? null}
+            onPayCompleted={handlePayCompleted}
             originText={originText}
             destinationText={destinationText}
             onOriginChange={(v) => {
@@ -325,7 +381,7 @@ export default function ClientDashboard() {
       {/* History + payments */}
       <div className="grid lg:grid-cols-1 gap-6 mt-6">
         <Card padded={false} className="flex flex-col max-h-[60vh]">
-          <h2 className="font-semibold text-stone-800 px-5 py-4 border-b border-stone-100 shrink-0">Historique des courses</h2>
+          <h2 className="font-semibold text-stone-800 px-5 py-4 border-b border-stone-100 shrink-0">Mes courses</h2>
           <div className="overflow-y-auto px-5 flex-1">
             {trips.length === 0 && <p className="text-sm text-stone-400 py-6 text-center">Aucune course pour l'instant.</p>}
             <ul className="divide-y divide-stone-100">
@@ -341,11 +397,6 @@ export default function ClientDashboard() {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <Badge status={t.status} />
-                    {t.status === 'COMPLETED' && (
-                      <Button size="sm" variant="secondary" onClick={() => setModalTrip(t)}>
-                        Payer
-                      </Button>
-                    )}
                   </div>
                 </li>
               ))}

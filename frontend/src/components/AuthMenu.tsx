@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { Car, MapPin, LogOut, Users, LayoutDashboard } from 'lucide-react'
+import { Car, LogOut, LayoutDashboard, BarChart3 } from 'lucide-react'
 import Button from './ui/Button'
 
 export default function AuthMenu() {
@@ -23,29 +23,24 @@ export default function AuthMenu() {
 
   return (
     <div className="flex items-center gap-3">
-      {user.role === 'CHAUFFEUR' ? (
-        <Link to="/driver-map" className="hidden sm:inline-flex items-center gap-1.5 text-sm font-medium text-stone-600 hover:text-brand-600">
-          <Car size={15} />
-          Espace chauffeur
-        </Link>
-      ) : user.role === 'CLIENT' ? null : (
-        <Link to="/onboard/chauffeur" className="hidden sm:inline-flex items-center gap-1.5 text-sm font-medium text-stone-600 hover:text-brand-600">
-          <MapPin size={15} />
-          Devenir chauffeur
-        </Link>
+      {user.role === 'CHAUFFEUR' && (
+        <>
+          <Link to="/driver-map" className="hidden sm:inline-flex items-center gap-1.5 text-sm font-medium text-stone-600 hover:text-brand-600">
+            <Car size={15} />
+            Course
+          </Link>
+          <Link to="/espace-chauffeur" className="hidden sm:inline-flex items-center gap-1.5 text-sm font-medium text-stone-600 hover:text-brand-600">
+            <BarChart3 size={15} />
+            Espace chauffeur
+          </Link>
+        </>
       )}
 
       {user.role === 'ADMIN' && (
-        <>
-          <Link to="/admin" className="hidden sm:inline-flex items-center gap-1.5 text-sm font-medium text-stone-600 hover:text-brand-600">
-            <LayoutDashboard size={15} />
-            Vue d'ensemble
-          </Link>
-          <Link to="/admin/users" className="hidden sm:inline-flex items-center gap-1.5 text-sm font-medium text-stone-600 hover:text-brand-600">
-            <Users size={15} />
-            Comptes connectés
-          </Link>
-        </>
+        <Link to="/admin" className="hidden sm:inline-flex items-center gap-1.5 text-sm font-medium text-stone-600 hover:text-brand-600">
+          <LayoutDashboard size={15} />
+          Vue d'ensemble
+        </Link>
       )}
 
       <div className="flex items-center gap-2 pl-3 border-l border-stone-200">

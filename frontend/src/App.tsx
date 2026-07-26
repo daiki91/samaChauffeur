@@ -11,7 +11,7 @@ import AuthMenu from './components/AuthMenu'
 import ClientDashboard from './pages/Dashboard/ClientDashboard'
 import Account from './pages/Account/Account'
 import DriverDashboard from './pages/Driver/DriverDashboard'
-import AdminUsers from './pages/Admin/AdminUsers'
+import DriverStats from './pages/Driver/DriverStats'
 import AdminOverview from './pages/Admin/AdminOverview'
 import RequireClient from './components/RequireClient'
 import RequireAdmin from './components/RequireAdmin'
@@ -151,9 +151,9 @@ const router = createBrowserRouter([
       { path: 'onboard/chauffeur', element: <RequireAuth><ChauffeurOnboard /></RequireAuth> },
       { path: 'map', element: <DriverMap /> },
       { path: 'driver-map', element: <RequireChauffeur><DriverDashboard /></RequireChauffeur> },
+      { path: 'espace-chauffeur', element: <RequireChauffeur><DriverStats /></RequireChauffeur> },
       { path: 'dashboard', element: <RequireClient><ClientDashboard /></RequireClient> },
       { path: 'admin', element: <RequireAdmin><AdminOverview /></RequireAdmin> },
-      { path: 'admin/users', element: <RequireAdmin><AdminUsers /></RequireAdmin> },
       { path: 'account', element: <RequireAuth><Account /></RequireAuth> },
       { path: '*', element: <NotFound /> },
     ],

@@ -102,6 +102,7 @@ Remarque : les chemins ci‑dessous incluent le préfixe `/api` tel que défini 
 ### Chauffeurs (`/api/chauffeurs/`)
 - POST `/api/chauffeurs/apply/` — Postuler comme chauffeur (auth requis)
 - POST `/api/chauffeurs/verify/<pk>/` — Vérifier un chauffeur (admin)
+- POST `/api/chauffeurs/reject/<pk>/` — Refuser une candidature chauffeur : supprime le profil et repasse l'utilisateur en CLIENT (admin)
 - GET `/api/chauffeurs/available/?lat=&lng=&radius=` — Chauffeurs disponibles (client)
 - POST `/api/chauffeurs/location/` — Mettre à jour localisation (chauffeur)
 - POST `/api/chauffeurs/availability/` — Basculer en ligne/hors ligne (body: `is_available`, chauffeur)

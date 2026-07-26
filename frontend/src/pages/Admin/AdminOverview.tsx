@@ -1,11 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { getUsers, getAdminChauffeurs, getAdminVehicles, getAdminTrips, updateAdminChauffeur, deleteAdminChauffeur } from '../../lib/api'
+import {
+  getUsers,
+  getAdminChauffeurs,
+  getAdminVehicles,
+  getAdminTrips,
+  updateAdminChauffeur,
+  deleteAdminChauffeur,
+  verifyChauffeur,
+  rejectChauffeur,
+} from '../../lib/api'
 import Card from '../../components/ui/Card'
 import Badge from '../../components/ui/Badge'
 import Spinner from '../../components/ui/Spinner'
 import Button from '../../components/ui/Button'
 import MiniBarChart from '../../components/admin/MiniBarChart'
-import { Users, Car, Truck, Route as RouteIcon, ShieldCheck, ShieldOff, Ban, Play, Trash2, Activity } from 'lucide-react'
+import { useToasts } from '../../components/Toasts'
+import { Users, Car, Truck, Route as RouteIcon, ShieldCheck, Ban, Play, Trash2, Activity, X, Check } from 'lucide-react'
 
 type AdminUser = { id: number; username: string; phone: string; role: string; phone_verified: boolean }
 type AdminChauffeur = {
@@ -69,6 +79,7 @@ function formatDateTime(iso: string) {
 }
 
 export default function AdminOverview() {
+  const { addToast } = useToasts()
   const [users, setUsers] = useState<AdminUser[]>([])
   const [chauffeurs, setChauffeurs] = useState<AdminChauffeur[]>([])
   const [vehicles, setVehicles] = useState<AdminVehicle[]>([])
@@ -77,6 +88,8 @@ export default function AdminOverview() {
   const [tab, setTab] = useState<Tab>('clients')
   const [chauffeurActionId, setChauffeurActionId] = useState<number | null>(null)
   const [chauffeurActionError, setChauffeurActionError] = useState<string | null>(null)
+  const [reviewing, setReviewing] = useState<AdminChauffeur | null>(null)
+  const [acting, setActing] = useState<'accept' | 'reject' | null>(null)
 
   useEffect(() => {
     let active = true
@@ -137,19 +150,6 @@ export default function AdminOverview() {
     [trips],
   )
 
-  async function handleToggleVerified(c: AdminChauffeur) {
-    setChauffeurActionId(c.id)
-    setChauffeurActionError(null)
-    try {
-      const res = await updateAdminChauffeur(c.id, { is_verified: !c.is_verified })
-      setChauffeurs((prev) => prev.map((x) => (x.id === c.id ? { ...x, ...res.data } : x)))
-    } catch (e: any) {
-      setChauffeurActionError(e?.response?.data?.detail || 'Action impossible.')
-    } finally {
-      setChauffeurActionId(null)
-    }
-  }
-
   async function handleToggleAvailable(c: AdminChauffeur) {
     setChauffeurActionId(c.id)
     setChauffeurActionError(null)
@@ -198,6 +198,36 @@ export default function AdminOverview() {
     )
   }
 
+  const handleAccept = async () => {
+    if (!reviewing) return
+    setActing('accept')
+    try {
+      await verifyChauffeur(reviewing.id)
+      setChauffeurs((prev) => prev.map((c) => (c.id === reviewing.id ? { ...c, is_verified: true } : c)))
+      addToast({ message: 'Chauffeur vérifié.', tone: 'success' })
+      setReviewing(null)
+    } catch (e: any) {
+      addToast({ message: e?.response?.data?.detail || 'Erreur lors de la vérification.', tone: 'error' })
+    } finally {
+      setActing(null)
+    }
+  }
+
+  const handleReject = async () => {
+    if (!reviewing) return
+    setActing('reject')
+    try {
+      await rejectChauffeur(reviewing.id)
+      setChauffeurs((prev) => prev.filter((c) => c.id !== reviewing.id))
+      addToast({ message: 'Candidature refusée.', tone: 'info' })
+      setReviewing(null)
+    } catch (e: any) {
+      addToast({ message: e?.response?.data?.detail || 'Erreur lors du refus.', tone: 'error' })
+    } finally {
+      setActing(null)
+    }
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
       <div className="mb-6">
@@ -244,7 +274,7 @@ export default function AdminOverview() {
       </div>
 
       {/* Lists */}
-      <Card padded={false}>
+      <Card padded={false} className="flex flex-col max-h-[60vh]">
         <div className="flex items-center gap-1 px-3 pt-3 border-b border-stone-100">
           {([
             ['clients', `Clients (${clients.length})`],
@@ -361,35 +391,32 @@ export default function AdminOverview() {
                           )}
                         </td>
                         <td className="px-5 py-3">
-                          <div className="flex items-center gap-1.5">
-                            <Button
-                              size="sm"
-                              variant={c.is_verified ? 'outline' : 'primary'}
-                              disabled={busy}
-                              onClick={() => handleToggleVerified(c)}
-                              title={c.is_verified ? 'Retirer la vérification' : 'Vérifier ce chauffeur'}
-                            >
-                              {c.is_verified ? <ShieldOff size={14} /> : <ShieldCheck size={14} />}
+                          {!c.is_verified ? (
+                            <Button size="sm" variant="outline" disabled={busy} onClick={() => setReviewing(c)}>
+                              Examiner
                             </Button>
-                            <Button
-                              size="sm"
-                              variant={c.is_available ? 'outline' : 'secondary'}
-                              disabled={busy}
-                              onClick={() => handleToggleAvailable(c)}
-                              title={c.is_available ? 'Suspendre ce chauffeur' : 'Réactiver ce chauffeur'}
-                            >
-                              {c.is_available ? <Ban size={14} /> : <Play size={14} />}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="danger"
-                              disabled={busy}
-                              onClick={() => handleDeleteChauffeur(c)}
-                              title="Retirer le statut chauffeur"
-                            >
-                              <Trash2 size={14} />
-                            </Button>
-                          </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5">
+                              <Button
+                                size="sm"
+                                variant={c.is_available ? 'outline' : 'secondary'}
+                                disabled={busy}
+                                onClick={() => handleToggleAvailable(c)}
+                                title={c.is_available ? 'Suspendre ce chauffeur' : 'Réactiver ce chauffeur'}
+                              >
+                                {c.is_available ? <Ban size={14} /> : <Play size={14} />}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="danger"
+                                disabled={busy}
+                                onClick={() => handleDeleteChauffeur(c)}
+                                title="Retirer le statut chauffeur"
+                              >
+                                <Trash2 size={14} />
+                              </Button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     )
@@ -467,6 +494,55 @@ export default function AdminOverview() {
           )}
         </div>
       </Card>
+
+      {reviewing && (
+        <div className="fixed inset-0 bg-stone-900/50 flex items-center justify-center z-[1000] p-4">
+          <div className="bg-white rounded-2xl shadow-floating w-full max-w-sm p-6 relative animate-fade-in-up">
+            <button
+              onClick={() => setReviewing(null)}
+              className="absolute right-4 top-4 text-stone-400 hover:text-stone-600"
+              disabled={acting !== null}
+            >
+              <X size={18} />
+            </button>
+            <span className="grid place-items-center w-11 h-11 rounded-xl bg-brand-50 text-brand-600 mb-3">
+              <ShieldCheck size={20} />
+            </span>
+            <h3 className="text-lg font-semibold text-stone-900">Vérifier ce chauffeur</h3>
+            <p className="text-sm text-stone-500 mb-4">Vérifiez ses informations avant de valider ou refuser sa candidature.</p>
+
+            <div className="space-y-2 mb-5">
+              <div className="flex items-center justify-between rounded-xl border border-stone-100 bg-stone-50 px-4 py-2.5 text-sm">
+                <span className="text-stone-500">Chauffeur</span>
+                <span className="font-medium text-stone-800">{reviewing.username || `#${reviewing.user}`}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl border border-stone-100 bg-stone-50 px-4 py-2.5 text-sm">
+                <span className="text-stone-500">Téléphone</span>
+                <span className="font-medium text-stone-800">{reviewing.phone || '—'}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl border border-stone-100 bg-stone-50 px-4 py-2.5 text-sm">
+                <span className="text-stone-500">Véhicule</span>
+                <span className="font-medium text-stone-800">
+                  {reviewing.vehicle ? `${VEHICLE_LABELS[reviewing.vehicle.type] || reviewing.vehicle.type} · ${reviewing.vehicle.seats} places` : '—'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl border border-stone-100 bg-stone-50 px-4 py-2.5 text-sm">
+                <span className="text-stone-500">Plaque</span>
+                <span className="font-medium text-stone-800">{reviewing.vehicle?.plate_number || '—'}</span>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="danger" icon={<Ban size={16} />} loading={acting === 'reject'} disabled={acting === 'accept'} onClick={handleReject}>
+                Refuser
+              </Button>
+              <Button variant="primary" icon={<Check size={16} />} loading={acting === 'accept'} disabled={acting === 'reject'} onClick={handleAccept}>
+                Accepter
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

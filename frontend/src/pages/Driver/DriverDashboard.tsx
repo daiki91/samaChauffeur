@@ -11,13 +11,18 @@ import Badge from '../../components/ui/Badge'
 import { MapPinned, Wallet, Power, Route as RouteIcon, MoonStar, Navigation, UserCheck, Flag } from 'lucide-react'
 import type { Socket } from 'socket.io-client'
 import { connectDriverSocket, connectTripSocket } from '../../lib/socket'
+import { haversineKm } from '../../lib/geo'
+
+const MAX_TRIP_RADIUS_KM = 5
 
 const PAYMENT_LABELS: Record<string, string> = { CASH: 'Espèces', ORANGE: 'Orange Money', WAVE: 'Wave', FREE: 'Free Money', CARD: 'Carte' }
+
+const DRIVER_ONLINE_KEY = 'driver_online'
 
 export default function DriverDashboard() {
   const [trips, setTrips] = useState<any[]>([])
   const [pendingPayments, setPendingPayments] = useState<any[]>([])
-  const [online, setOnline] = useState(false)
+  const [online, setOnline] = useState(() => localStorage.getItem(DRIVER_ONLINE_KEY) === 'true')
   const [toggling, setToggling] = useState(false)
   const socketRef = useRef<Socket | null>(null)
   const tripSocketRef = useRef<Socket | null>(null)
@@ -50,9 +55,16 @@ export default function DriverDashboard() {
         const a = await getMyActiveTrip()
         if (a.data) {
           setActiveTrip(a.data)
-          setOnline(true) // restore the map/live-position view alongside the in-progress trip
+          setOnline(true)
+          localStorage.setItem(DRIVER_ONLINE_KEY, 'true')
         }
       } catch (e) {}
+      // If localStorage says we were online, sync that with the server
+      if (localStorage.getItem(DRIVER_ONLINE_KEY) === 'true') {
+        try {
+          await setChauffeurAvailability(true)
+        } catch (e) {}
+      }
     }
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -160,6 +172,7 @@ export default function DriverDashboard() {
     try {
       await setChauffeurAvailability(next)
       setOnline(next)
+      localStorage.setItem(DRIVER_ONLINE_KEY, String(next))
       addToast({ message: next ? 'Vous êtes en ligne' : 'Vous êtes hors ligne', tone: next ? 'success' : 'info' })
     } catch (e: any) {
       addToast({ message: e?.response?.data?.detail || 'Impossible de changer de statut', tone: 'error' })
@@ -234,11 +247,31 @@ export default function DriverDashboard() {
     [activeTrip, pendingPayments],
   )
 
+  // Filter available trips to only show those within the driver's sector.
+  const nearbyTrips = useMemo(() => {
+    if (!myPosition) return trips
+    return trips.filter((t) => {
+      if (t.origin_lat == null || t.origin_lng == null) return true
+      return haversineKm(myPosition, { lat: t.origin_lat, lng: t.origin_lng }) <= MAX_TRIP_RADIUS_KM
+    })
+  }, [trips, myPosition])
+
+  // While a completed trip is awaiting payment, poll so "Le passager a payé" enables itself
+  // as soon as the passenger submits their payment, without needing a manual refresh.
+  useEffect(() => {
+    if (!activeTrip || activeTrip.status !== 'COMPLETED' || activeTripPayment) return
+    const id = setInterval(() => {
+      refreshPendingPayments()
+    }, 5000)
+    return () => clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTrip?.id, activeTrip?.status, activeTripPayment])
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-stone-900">Espace chauffeur</h1>
+          <h1 className="text-2xl font-bold text-stone-900">Course</h1>
           <p className="text-stone-500 text-sm">Gérez vos courses et votre disponibilité.</p>
         </div>
         <Button
@@ -269,7 +302,7 @@ export default function DriverDashboard() {
           {online ? (
             <DriverMap
               standalone={false}
-              height="65vh"
+              height="60vh"
               role="driver"
               origin={
                 activeTrip?.status === 'STARTED' && activeTrip.origin_lat != null
@@ -291,6 +324,7 @@ export default function DriverDashboard() {
               onSocketError={(msg) => {
                 addToast({ message: msg, tone: 'error' })
                 setOnline(false)
+                localStorage.setItem(DRIVER_ONLINE_KEY, 'false')
               }}
             />
           ) : (
@@ -345,15 +379,17 @@ export default function DriverDashboard() {
                       {PAYMENT_LABELS[activeTrip.payment_method] || activeTrip.payment_method}
                     </div>
                   </div>
-                  {activeTripPayment ? (
-                    <Button fullWidth size="lg" variant="secondary" onClick={() => handleValidatePayment(activeTripPayment.id, true)}>
-                      Confirmer le paiement reçu
-                    </Button>
-                  ) : (
+                  {!activeTripPayment && (
                     <div className="text-sm text-stone-400 text-center py-2 mb-2">En attente que le passager règle la course…</div>
                   )}
-                  <Button fullWidth variant="ghost" className="mt-2" onClick={() => setActiveTrip(null)}>
-                    Fermer
+                  <Button
+                    fullWidth
+                    size="lg"
+                    variant="secondary"
+                    disabled={!activeTripPayment}
+                    onClick={() => activeTripPayment && handleValidatePayment(activeTripPayment.id, true)}
+                  >
+                    Le passager a payé
                   </Button>
                 </div>
               )}
@@ -363,52 +399,42 @@ export default function DriverDashboard() {
               <h2 className="font-semibold text-stone-800 mb-3 flex items-center gap-2">
                 <RouteIcon size={18} className="text-brand-600" />
                 Courses disponibles
+                {myPosition && <span className="text-xs font-normal text-stone-400 ml-1">· dans un rayon de {MAX_TRIP_RADIUS_KM} km</span>}
               </h2>
-              {trips.length === 0 && <p className="text-sm text-stone-400 py-6 text-center">Aucune course en attente pour l'instant.</p>}
+              {nearbyTrips.length === 0 && (
+                <p className="text-sm text-stone-400 py-6 text-center">
+                  {trips.length === 0
+                    ? 'Aucune course en attente pour l\'instant.'
+                    : 'Aucune course à proximité. Les courses disponibles sont trop éloignées de votre position.'}
+                </p>
+              )}
               <ul className="space-y-2.5">
-                {trips.map((t) => (
-                  <li key={t.id} className="rounded-xl border border-stone-100 p-3 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-stone-800 truncate">
-                        {t.origin.split(',').slice(0, 1).join('')} → {t.destination.split(',').slice(0, 1).join('')}
+                {nearbyTrips.map((t) => {
+                  const distFromDriver = myPosition && t.origin_lat != null && t.origin_lng != null
+                    ? haversineKm(myPosition, { lat: t.origin_lat, lng: t.origin_lng })
+                    : null
+                  return (
+                    <li key={t.id} className="rounded-xl border border-stone-100 p-3 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-stone-800 truncate">
+                          {t.origin.split(',').slice(0, 1).join('')} → {t.destination.split(',').slice(0, 1).join('')}
+                        </div>
+                        <div className="text-xs text-stone-400 mt-0.5">
+                          {t.distance_km ? `${Number(t.distance_km).toFixed(1)} km` : '—'} · {t.price ? `${t.price} XOF` : 'Prix non estimé'}
+                          {distFromDriver != null && <span className="text-brand-600 font-medium"> · à {distFromDriver.toFixed(1)} km</span>}
+                        </div>
                       </div>
-                      <div className="text-xs text-stone-400 mt-0.5">
-                        {t.distance_km ? `${Number(t.distance_km).toFixed(1)} km` : '—'} · {t.price ? `${t.price} XOF` : 'Prix non estimé'}
-                      </div>
-                    </div>
-                    <Button size="sm" onClick={() => handleClaim(t.id)} loading={claimingId === t.id}>
-                      Prendre
-                    </Button>
-                  </li>
-                ))}
+                      <Button size="sm" onClick={() => handleClaim(t.id)} loading={claimingId === t.id}>
+                        Prendre
+                      </Button>
+                    </li>
+                  )
+                })}
               </ul>
             </>
           )}
         </Card>
       </div>
-
-      <Card className="mt-6">
-        <h2 className="font-semibold text-stone-800 mb-3 flex items-center gap-2">
-          <Wallet size={18} className="text-secondary-600" />
-          Paiements en attente
-        </h2>
-        {pendingPayments.length === 0 && <p className="text-sm text-stone-400 py-6 text-center">Aucun paiement en attente.</p>}
-        <ul className="divide-y divide-stone-100">
-          {pendingPayments.map((tx) => (
-            <li key={tx.id} className="py-3 flex items-center justify-between gap-3">
-              <div className="text-sm text-stone-700">
-                Course #{tx.metadata?.trip_id} — <span className="font-medium">{tx.amount} {tx.currency}</span> · {PAYMENT_LABELS[tx.method] || tx.method}
-              </div>
-              <div className="flex items-center gap-2">
-                <Badge status={tx.status} />
-                <Button size="sm" variant="secondary" onClick={() => handleValidatePayment(tx.id)}>
-                  Valider
-                </Button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </Card>
     </div>
   )
 }

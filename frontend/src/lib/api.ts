@@ -208,6 +208,14 @@ export async function applyChauffeur(vehicle: { type: string; seats: number; pla
   return api.post('/chauffeurs/apply/', { vehicle })
 }
 
+export async function verifyChauffeur(id: number) {
+  return api.post(`/chauffeurs/verify/${id}/`)
+}
+
+export async function rejectChauffeur(id: number) {
+  return api.post(`/chauffeurs/reject/${id}/`)
+}
+
 export async function estimatePrice(payload: { distance_km: number; vehicle_type: string; mode?: string; region?: string }) {
   return api.post('/pricing/estimate/', payload)
 }
