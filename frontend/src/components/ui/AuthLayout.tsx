@@ -29,7 +29,7 @@ export default function AuthLayout({
           <h2 className="text-3xl font-bold leading-tight mb-3">Où que vous alliez, on vous y emmène.</h2>
           <p className="text-white/85">Covoiturage, courses privées et transport en bus — réservez en quelques secondes, suivez votre chauffeur en direct.</p>
         </div>
-        <p className="relative z-10 text-sm text-white/60">© {new Date().getFullYear()} samaChauffeur</p>
+        <p className="relative z-10 text-sm text-white/60">&copy; {new Date().getFullYear()} samaChauffeur</p>
       </div>
 
       {/* Right — form panel */}
