@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Navigation, Car, Star, Users, Clock3, Route as RouteIcon, Check, MapPin } from 'lucide-react'
+import { Navigation, Car, Star, Users, Clock3, Route as RouteIcon, Check, MapPin, Phone, MessageCircle } from 'lucide-react'
 import AddressAutocomplete from './ui/AddressAutocomplete'
 import Button from './ui/Button'
 import Spinner from './ui/Spinner'
@@ -511,7 +511,22 @@ export default function RideStatusBar({
           {vehicleLabel}
           {driver?.vehicle?.plate_number && <span className="text-stone-400 dark:text-stone-500">· {driver.vehicle.plate_number}</span>}
         </div>
-        {driver?.phone && <div className="mt-1 text-xs text-stone-400 dark:text-stone-500">{driver.phone}</div>}
+        {driver?.phone && (
+          <div className="mt-3 flex items-center gap-2">
+            <a
+              href={`tel:${driver.phone}`}
+              className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-secondary-500 text-white text-sm font-medium py-2 hover:bg-secondary-600 active:scale-[0.97] transition-all"
+            >
+              <Phone size={14} /> Appeler
+            </a>
+            <a
+              href={`sms:${driver.phone}`}
+              className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-secondary-200 dark:border-secondary-500/30 text-secondary-700 dark:text-secondary-300 text-sm font-medium py-2 hover:bg-secondary-50 dark:hover:bg-secondary-500/10 active:scale-[0.97] transition-all"
+            >
+              <MessageCircle size={14} /> Message
+            </a>
+          </div>
+        )}
         {driverEtaMin != null && (
           <div className="mt-3 pt-3 border-t border-secondary-100 dark:border-secondary-500/20 flex items-center gap-2">
             <span className="grid place-items-center w-7 h-7 rounded-lg bg-secondary-500/15 text-secondary-700 dark:text-secondary-300 shrink-0">
