@@ -78,3 +78,61 @@ a {
   background: #e7d5c4;
   border-radius: 9999px;
 }
+
+/* --- Landing page animations --- */
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+.animate-float {
+  animation: float 4s ease-in-out infinite;
+}
+.animate-float-slow {
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes shadow-pulse {
+  0%, 100% { transform: translateX(-50%) scaleX(1); opacity: 0.35; }
+  50% { transform: translateX(-50%) scaleX(0.82); opacity: 0.2; }
+}
+.animate-shadow-pulse {
+  animation: shadow-pulse 4s ease-in-out infinite;
+}
+
+@keyframes pulse-slow {
+  0%, 100% { transform: scale(1); opacity: 0.6; }
+  50% { transform: scale(1.15); opacity: 0.9; }
+}
+.animate-pulse-slow {
+  animation: pulse-slow 4s ease-in-out infinite;
+}
+
+@keyframes gradient-pan {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.animate-gradient-pan {
+  background-size: 200% 200%;
+  animation: gradient-pan 8s ease infinite;
+}
+
+@keyframes bounce-down {
+  0%, 100% { transform: translateY(0); opacity: 0.6; }
+  50% { transform: translateY(6px); opacity: 1; }
+}
+.animate-bounce-down {
+  animation: bounce-down 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-float,
+  .animate-float-slow,
+  .animate-shadow-pulse,
+  .animate-pulse-slow,
+  .animate-gradient-pan,
+  .animate-bounce-down {
+    animation: none !important;
+  }
+}
