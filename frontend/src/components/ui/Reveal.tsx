@@ -16,7 +16,7 @@ const variantClasses: Record<NonNullable<Props['variant']>, string> = {
   zoom: 'scale-95 opacity-0',
 }
 
-/** Fades/slides children into view the first time they cross the viewport. */
+/** Fades/slides children in the first time they cross the viewport (or immediately if already visible on mount). */
 export default function Reveal({ children, className = '', delay = 0, as = 'div', variant = 'up' }: Props) {
   const ref = useRef<HTMLElement | null>(null)
   const [visible, setVisible] = useState(false)

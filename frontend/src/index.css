@@ -12,6 +12,12 @@
   font-weight: 400;
 }
 
+.dark {
+  --bg: #0c0a09;
+  --text: #f5f0eb;
+  --muted: #a8998c;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -78,6 +84,9 @@ a {
   background: #e7d5c4;
   border-radius: 9999px;
 }
+.dark ::-webkit-scrollbar-thumb {
+  background: #44403c;
+}
 
 /* --- Landing page animations --- */
 
@@ -126,13 +135,96 @@ a {
   animation: bounce-down 1.8s ease-in-out infinite;
 }
 
+@keyframes wave {
+  0%, 100% { transform: rotate(0deg); }
+  15% { transform: rotate(14deg); }
+  30% { transform: rotate(-8deg); }
+  45% { transform: rotate(14deg); }
+  60% { transform: rotate(-4deg); }
+  75% { transform: rotate(10deg); }
+}
+.animate-wave {
+  display: inline-block;
+  transform-origin: 70% 70%;
+  animation: wave 1.6s ease-in-out 1;
+}
+
+@keyframes pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+.animate-pop {
+  animation: pop 0.4s ease-out;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(24px) scale(0.97); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+.animate-toast-in {
+  animation: toast-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes toast-out {
+  from { opacity: 1; transform: translateX(0) scale(1); max-height: 200px; }
+  to { opacity: 0; transform: translateX(24px) scale(0.97); max-height: 200px; }
+}
+.animate-toast-out {
+  animation: toast-out 0.28s ease-in both;
+}
+
+@keyframes toast-progress {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+.animate-toast-progress {
+  animation: toast-progress linear forwards;
+}
+
+@keyframes marker-pulse {
+  0% { transform: scale(0.7); opacity: 0.6; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+.animate-marker-pulse {
+  animation: marker-pulse 1.8s ease-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-float,
   .animate-float-slow,
   .animate-shadow-pulse,
   .animate-pulse-slow,
   .animate-gradient-pan,
-  .animate-bounce-down {
+  .animate-bounce-down,
+  .animate-wave,
+  .animate-pop,
+  .animate-toast-in,
+  .animate-toast-out,
+  .animate-toast-progress,
+  .animate-marker-pulse {
     animation: none !important;
+  }
+}
+
+/* Printing a trip receipt: hide everything except the element marked #print-receipt. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #print-receipt, #print-receipt * {
+    visibility: visible;
+  }
+  #print-receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-height: none !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+  }
+  .print-hide {
+    display: none !important;
   }
 }

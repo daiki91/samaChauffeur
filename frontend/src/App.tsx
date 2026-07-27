@@ -19,20 +19,24 @@ import RequireAdmin from './components/RequireAdmin'
 import RequireAuth from './components/RequireAuth'
 import RequireChauffeur from './components/RequireChauffeur'
 import Button from './components/ui/Button'
+import ThemeToggle from './components/ui/ThemeToggle'
 import './index.css'
 
 function Layout() {
   return (
-    <div className="min-h-screen bg-stone-50">
-      <nav className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-stone-100">
+    <div className="min-h-screen bg-stone-50 dark:bg-stone-950 transition-colors">
+      <nav className="sticky top-0 z-40 bg-white/90 dark:bg-stone-900/90 backdrop-blur border-b border-stone-100 dark:border-stone-800">
         <div className="max-w-6xl mx-auto flex items-center justify-between px-4 sm:px-6 py-3">
-          <Link to="/" className="flex items-center gap-2 text-lg font-bold text-stone-900">
+          <Link to="/" className="flex items-center gap-2 text-lg font-bold text-stone-900 dark:text-stone-50">
             <span className="grid place-items-center w-8 h-8 rounded-lg bg-warm-gradient text-white">
               <Car size={16} />
             </span>
             samaChauffeur
           </Link>
-          <AuthMenu />
+          <div className="flex items-center gap-1.5">
+            <ThemeToggle />
+            <AuthMenu />
+          </div>
         </div>
       </nav>
 
@@ -49,11 +53,11 @@ function NotFound() {
   return (
     <div className="min-h-[60vh] grid place-items-center text-center px-6">
       <div>
-        <span className="grid place-items-center w-16 h-16 rounded-2xl bg-brand-50 text-brand-500 mx-auto mb-4">
+        <span className="grid place-items-center w-16 h-16 rounded-2xl bg-brand-50 dark:bg-brand-500/10 text-brand-500 mx-auto mb-4">
           <Compass size={28} />
         </span>
-        <h1 className="text-2xl font-bold text-stone-900 mb-2">Page introuvable</h1>
-        <p className="text-stone-500 mb-6 max-w-sm">Cette page n'existe pas ou a été déplacée.</p>
+        <h1 className="text-2xl font-bold text-stone-900 dark:text-stone-50 mb-2">Page introuvable</h1>
+        <p className="text-stone-500 dark:text-stone-400 mb-6 max-w-sm">Cette page n'existe pas ou a été déplacée.</p>
         <Link to="/">
           <Button size="lg">Retour à l'accueil</Button>
         </Link>

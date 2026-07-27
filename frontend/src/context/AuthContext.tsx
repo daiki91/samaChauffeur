@@ -8,6 +8,7 @@ type User = {
   username: string
   phone: string
   role: string
+  language?: string
 }
 
 type AuthContextValue = {

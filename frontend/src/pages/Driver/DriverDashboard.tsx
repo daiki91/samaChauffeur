@@ -13,9 +13,11 @@ import type { Socket } from 'socket.io-client'
 import { connectDriverSocket, connectTripSocket } from '../../lib/socket'
 import { haversineKm } from '../../lib/geo'
 
-const MAX_TRIP_RADIUS_KM = 5
-
 const PAYMENT_LABELS: Record<string, string> = { CASH: 'Espèces', ORANGE: 'Orange Money', WAVE: 'Wave', FREE: 'Free Money', CARD: 'Carte' }
+
+// Must match MAX_CLAIM_RADIUS_KM on the backend (backend-node/src/modules/trips/trips.routes.ts) —
+// a claim outside this radius is rejected server-side regardless, this just avoids a round-trip.
+const MAX_CLAIM_RADIUS_KM = 5
 
 const DRIVER_ONLINE_KEY = 'driver_online'
 
@@ -247,12 +249,17 @@ export default function DriverDashboard() {
     [activeTrip, pendingPayments],
   )
 
-  // Filter available trips to only show those within the driver's sector.
+  // Sort available trips by distance from the driver (closest first) — but never hide any of
+  // them. A hard radius cutoff here used to silently make legitimately nearby requests
+  // disappear whenever the browser's GPS fix was briefly inaccurate or stale, which looked
+  // like "I can't accept a trip in my own sector" from the driver's side. Showing everything,
+  // ordered by distance, keeps the app honest about what's actually available.
   const nearbyTrips = useMemo(() => {
     if (!myPosition) return trips
-    return trips.filter((t) => {
-      if (t.origin_lat == null || t.origin_lng == null) return true
-      return haversineKm(myPosition, { lat: t.origin_lat, lng: t.origin_lng }) <= MAX_TRIP_RADIUS_KM
+    return [...trips].sort((a, b) => {
+      const da = a.origin_lat != null && a.origin_lng != null ? haversineKm(myPosition, { lat: a.origin_lat, lng: a.origin_lng }) : Infinity
+      const db = b.origin_lat != null && b.origin_lng != null ? haversineKm(myPosition, { lat: b.origin_lat, lng: b.origin_lng }) : Infinity
+      return da - db
     })
   }, [trips, myPosition])
 
@@ -399,32 +406,49 @@ export default function DriverDashboard() {
               <h2 className="font-semibold text-stone-800 mb-3 flex items-center gap-2">
                 <RouteIcon size={18} className="text-brand-600" />
                 Courses disponibles
-                {myPosition && <span className="text-xs font-normal text-stone-400 ml-1">· dans un rayon de {MAX_TRIP_RADIUS_KM} km</span>}
+                {myPosition && (
+                  <span className="text-xs font-normal text-stone-400 ml-1">
+                    · vous pouvez accepter celles à moins de {MAX_CLAIM_RADIUS_KM} km
+                  </span>
+                )}
               </h2>
               {nearbyTrips.length === 0 && (
-                <p className="text-sm text-stone-400 py-6 text-center">
-                  {trips.length === 0
-                    ? 'Aucune course en attente pour l\'instant.'
-                    : 'Aucune course à proximité. Les courses disponibles sont trop éloignées de votre position.'}
-                </p>
+                <p className="text-sm text-stone-400 py-6 text-center">Aucune course en attente pour l'instant.</p>
               )}
               <ul className="space-y-2.5">
                 {nearbyTrips.map((t) => {
                   const distFromDriver = myPosition && t.origin_lat != null && t.origin_lng != null
                     ? haversineKm(myPosition, { lat: t.origin_lat, lng: t.origin_lng })
                     : null
+                  const outOfRange = distFromDriver != null && distFromDriver > MAX_CLAIM_RADIUS_KM
                   return (
-                    <li key={t.id} className="rounded-xl border border-stone-100 p-3 flex items-center justify-between gap-3">
+                    <li
+                      key={t.id}
+                      className={`rounded-xl border p-3 flex items-center justify-between gap-3 ${
+                        outOfRange ? 'border-stone-100 bg-stone-50/60 opacity-70' : 'border-stone-100'
+                      }`}
+                    >
                       <div className="min-w-0">
                         <div className="text-sm font-medium text-stone-800 truncate">
                           {t.origin.split(',').slice(0, 1).join('')} → {t.destination.split(',').slice(0, 1).join('')}
                         </div>
                         <div className="text-xs text-stone-400 mt-0.5">
                           {t.distance_km ? `${Number(t.distance_km).toFixed(1)} km` : '—'} · {t.price ? `${t.price} XOF` : 'Prix non estimé'}
-                          {distFromDriver != null && <span className="text-brand-600 font-medium"> · à {distFromDriver.toFixed(1)} km</span>}
+                          {distFromDriver != null && (
+                            <span className={`font-medium ${outOfRange ? 'text-stone-400' : 'text-brand-600'}`}>
+                              {' '}
+                              · à {distFromDriver.toFixed(1)} km{outOfRange ? ' (hors secteur)' : ''}
+                            </span>
+                          )}
                         </div>
                       </div>
-                      <Button size="sm" onClick={() => handleClaim(t.id)} loading={claimingId === t.id}>
+                      <Button
+                        size="sm"
+                        onClick={() => handleClaim(t.id)}
+                        loading={claimingId === t.id}
+                        disabled={outOfRange}
+                        title={outOfRange ? `Cette course est à plus de ${MAX_CLAIM_RADIUS_KM} km de votre position` : undefined}
+                      >
                         Prendre
                       </Button>
                     </li>

@@ -10,7 +10,7 @@ export default function Card({
   padded?: boolean
 }) {
   return (
-    <div className={`bg-white rounded-xl2 shadow-card border border-stone-100 ${padded ? 'p-5' : ''} ${className}`}>
+    <div className={`bg-white dark:bg-stone-900 rounded-xl2 shadow-card border border-stone-100 dark:border-stone-800 transition-colors ${padded ? 'p-5' : ''} ${className}`}>
       {children}
     </div>
   )

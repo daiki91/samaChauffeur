@@ -93,6 +93,7 @@ model User {
   clientProfile  ClientProfile?
   trips          Trip[]          @relation("PassengerTrips")
   tripPassengers TripPassenger[]
+  tripRatings    TripRating[]
   auditLogs      AuditLog[]
   refreshTokens  RefreshToken[]
 
@@ -155,6 +156,7 @@ model Chauffeur {
   assignedTrips Trip[]
   payouts       Payout[]
   locationPings ChauffeurLocationPing[]
+  ratings       TripRating[]
 
   @@map("chauffeurs")
 }
@@ -203,8 +205,26 @@ model Trip {
 
   tripPassengers TripPassenger[]
   supportTickets SupportTicket[]
+  rating         TripRating?
 
   @@map("trips")
+}
+
+model TripRating {
+  id          Int      @id @default(autoincrement())
+  tripId      Int      @unique @map("trip_id")
+  trip        Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  passengerId Int      @map("passenger_id")
+  passenger   User     @relation(fields: [passengerId], references: [id], onDelete: Cascade)
+  driverId    Int      @map("driver_id")
+  driver      Chauffeur @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  rating      Int
+  comment     String?
+  skipped     Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([driverId])
+  @@map("trip_ratings")
 }
 
 model TripPassenger {

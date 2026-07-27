@@ -4,11 +4,12 @@ type Variant = 'primary' | 'secondary' | 'ghost' | 'outline' | 'danger'
 type Size = 'sm' | 'md' | 'lg'
 
 const variantClasses: Record<Variant, string> = {
-  primary: 'bg-brand-500 text-white hover:bg-brand-600 shadow-card disabled:bg-brand-300',
-  secondary: 'bg-secondary-500 text-white hover:bg-secondary-600 shadow-card disabled:bg-secondary-300',
-  outline: 'bg-white text-brand-600 border border-brand-200 hover:bg-brand-50 disabled:text-brand-300',
-  ghost: 'bg-transparent text-stone-700 hover:bg-stone-100 disabled:text-stone-300',
-  danger: 'bg-red-600 text-white hover:bg-red-700 shadow-card disabled:bg-red-300',
+  primary: 'bg-brand-500 text-white hover:bg-brand-600 shadow-card disabled:bg-brand-300 dark:disabled:bg-brand-800',
+  secondary: 'bg-secondary-500 text-white hover:bg-secondary-600 shadow-card disabled:bg-secondary-300 dark:disabled:bg-secondary-800',
+  outline:
+    'bg-white text-brand-600 border border-brand-200 hover:bg-brand-50 disabled:text-brand-300 dark:bg-stone-900 dark:border-brand-800 dark:hover:bg-brand-500/10 dark:disabled:text-brand-800',
+  ghost: 'bg-transparent text-stone-700 hover:bg-stone-100 disabled:text-stone-300 dark:text-stone-300 dark:hover:bg-stone-800 dark:disabled:text-stone-600',
+  danger: 'bg-red-600 text-white hover:bg-red-700 shadow-card disabled:bg-red-300 dark:disabled:bg-red-900',
 }
 
 const sizeClasses: Record<Size, string> = {
@@ -38,7 +39,7 @@ export default function Button({
 }: Props) {
   return (
     <button
-      className={`inline-flex items-center justify-center font-medium transition-colors duration-150 disabled:cursor-not-allowed ${variantClasses[variant]} ${sizeClasses[size]} ${fullWidth ? 'w-full' : ''} ${className}`}
+      className={`inline-flex items-center justify-center font-medium transition-all duration-150 active:scale-[0.97] disabled:cursor-not-allowed disabled:active:scale-100 ${variantClasses[variant]} ${sizeClasses[size]} ${fullWidth ? 'w-full' : ''} ${className}`}
       disabled={disabled || loading}
       {...rest}
     >

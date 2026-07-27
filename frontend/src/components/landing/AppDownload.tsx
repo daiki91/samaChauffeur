@@ -1,5 +1,5 @@
 import { Bell, MapPinned, Wallet } from 'lucide-react'
-import Reveal from './Reveal'
+import Reveal from '../ui/Reveal'
 import appleStoreLogo from '../../assets/apple-store.png'
 import googlePlayLogo from '../../assets/google-play.jpg'
 
