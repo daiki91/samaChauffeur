@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
 import DriverMap from '../Map/DriverMap'
-import { getAvailableTrips, claimTrip, getMyActiveTrip, acceptTrip, startTrip, endTrip } from '../../lib/driverApi'
+import { getAvailableTrips, claimTrip, getMyActiveTrip, acceptTrip, arriveTrip, startTrip, endTrip } from '../../lib/driverApi'
 import { getPendingPaymentsForDriver, validateTransaction, setChauffeurAvailability, getTrip } from '../../lib/api'
 import { useToasts } from '../../components/Toasts'
 import { useGeolocation } from '../../lib/useGeolocation'
@@ -8,7 +8,7 @@ import { getRoute, type Route } from '../../lib/routing'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Badge from '../../components/ui/Badge'
-import { MapPinned, Wallet, Power, Route as RouteIcon, MoonStar, Navigation, UserCheck, Flag } from 'lucide-react'
+import { MapPinned, Wallet, Power, Route as RouteIcon, MoonStar, Navigation, UserCheck, Flag, MapPin } from 'lucide-react'
 import type { Socket } from 'socket.io-client'
 import { connectDriverSocket, connectTripSocket } from '../../lib/socket'
 import { haversineKm } from '../../lib/geo'
@@ -32,6 +32,7 @@ export default function DriverDashboard() {
 
   const [activeTrip, setActiveTrip] = useState<any | null>(null)
   const [claimingId, setClaimingId] = useState<number | null>(null)
+  const [arriving, setArriving] = useState(false)
   const [starting, setStarting] = useState(false)
   const [ending, setEnding] = useState(false)
 
@@ -201,6 +202,20 @@ export default function DriverDashboard() {
     }
   }
 
+  const handleArrivedAtPickup = async () => {
+    if (!activeTrip) return
+    setArriving(true)
+    try {
+      await arriveTrip(activeTrip.id)
+      setActiveTrip((t: any) => (t ? { ...t, status: 'ARRIVED' } : t))
+      addToast({ message: 'Passager notifié de votre arrivée.', tone: 'success' })
+    } catch (e: any) {
+      addToast({ message: e?.response?.data?.detail || 'Erreur', tone: 'error' })
+    } finally {
+      setArriving(false)
+    }
+  }
+
   const handleClientOnBoard = async () => {
     if (!activeTrip) return
     setStarting(true)
@@ -300,9 +315,11 @@ export default function DriverDashboard() {
             <h2 className="font-semibold text-stone-800">
               {activeTrip?.status === 'STARTED'
                 ? 'Trajet vers la destination'
-                : activeTrip
-                  ? 'Trajet vers le passager'
-                  : 'Votre position en direct'}
+                : activeTrip?.status === 'ARRIVED'
+                  ? 'Arrivé au point de rendez-vous'
+                  : activeTrip
+                    ? 'Trajet vers le passager'
+                    : 'Votre position en direct'}
             </h2>
             {routeLoading && <span className="text-xs text-stone-400">Calcul de l'itinéraire…</span>}
           </div>
@@ -364,6 +381,12 @@ export default function DriverDashboard() {
               </div>
 
               {['ASSIGNED', 'ACCEPTED'].includes(activeTrip.status) && (
+                <Button fullWidth size="lg" icon={<MapPin size={16} />} onClick={handleArrivedAtPickup} loading={arriving}>
+                  Je suis arrivé
+                </Button>
+              )}
+
+              {activeTrip.status === 'ARRIVED' && (
                 <Button fullWidth size="lg" icon={<UserCheck size={16} />} onClick={handleClientOnBoard} loading={starting}>
                   Client à bord
                 </Button>

@@ -138,6 +138,9 @@ export default function ClientDashboard() {
           setTrips(t.data)
         } else {
           setActiveTrip(r.data)
+          if (data.status === 'ARRIVED') {
+            addToast({ message: 'Votre chauffeur est arrivé au point de rendez-vous.', tone: 'success' })
+          }
         }
       } catch (e) {}
     })

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Navigation, Car, Star, Users, Clock3, Route as RouteIcon, Check } from 'lucide-react'
+import { Navigation, Car, Star, Users, Clock3, Route as RouteIcon, Check, MapPin } from 'lucide-react'
 import AddressAutocomplete from './ui/AddressAutocomplete'
 import Button from './ui/Button'
 import Spinner from './ui/Spinner'
@@ -147,10 +147,10 @@ function useNearbyVehicleCount(point: Point | null, vehicleType: string | null, 
   return count
 }
 
-const PROGRESS_STEPS = ['Recherche', 'Chauffeur trouvé', 'En route'] as const
+const PROGRESS_STEPS = ['Recherche', 'Chauffeur trouvé', 'Arrivée', 'En route'] as const
 
 function TripProgress({ status }: { status: string }) {
-  const stepIndex = status === 'STARTED' ? 2 : status === 'ASSIGNED' || status === 'ACCEPTED' ? 1 : 0
+  const stepIndex = status === 'STARTED' ? 3 : status === 'ARRIVED' ? 2 : status === 'ASSIGNED' || status === 'ACCEPTED' ? 1 : 0
 
   return (
     <div className="flex items-center mb-5">
@@ -482,10 +482,22 @@ export default function RideStatusBar({
     <div key="driver-found" className="animate-fade-in-up">
       <h2 className="font-semibold text-stone-800 dark:text-stone-100 mb-4 flex items-center gap-2">
         <Navigation size={18} className="text-brand-600" />
-        Chauffeur trouvé
+        {status === 'ARRIVED' ? 'Votre chauffeur est arrivé' : 'Chauffeur trouvé'}
       </h2>
 
       <TripProgress status={status!} />
+
+      {status === 'ARRIVED' && (
+        <div className="rounded-xl bg-accent-300/15 dark:bg-accent-400/10 border border-accent-300/40 dark:border-accent-400/20 px-4 py-3 mb-4 flex items-center gap-2.5 animate-pop">
+          <span className="grid place-items-center w-9 h-9 rounded-full bg-accent-400 text-white shrink-0">
+            <MapPin size={16} />
+          </span>
+          <div className="text-sm">
+            <div className="font-semibold text-stone-800 dark:text-stone-100">Votre chauffeur vous attend</div>
+            <div className="text-stone-500 dark:text-stone-400 text-xs">Rendez-vous au point de départ indiqué.</div>
+          </div>
+        </div>
+      )}
 
       <div className="rounded-xl bg-secondary-50 dark:bg-secondary-500/10 border border-secondary-100 dark:border-secondary-500/20 px-4 py-4 mb-4 animate-pop">
         <div className="flex items-center justify-between">

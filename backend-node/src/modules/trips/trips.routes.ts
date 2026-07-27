@@ -203,7 +203,7 @@ router.get(
     if (!chauffeur) return res.status(403).json({ detail: 'Not a chauffeur' })
 
     const trip = await prisma.trip.findFirst({
-      where: { driverId: chauffeur.id, status: { in: ['ASSIGNED', 'ACCEPTED', 'STARTED'] } },
+      where: { driverId: chauffeur.id, status: { in: ['ASSIGNED', 'ACCEPTED', 'ARRIVED', 'STARTED'] } },
       orderBy: { createdAt: 'desc' },
       include: { driver: { include: { user: true, vehicle: true } }, rating: true },
     })
@@ -318,6 +318,25 @@ router.post(
   }),
 )
 
+// ---------- POST /:pk/arrived/ ----------
+// Driver signals they've reached the pickup point — lets the passenger's screen switch from
+// "chauffeur en route" to "chauffeur arrivé" instead of guessing from the ETA alone.
+
+router.post(
+  '/:pk/arrived/',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const ctx = await requireOwnTrip(req, res, parseInt(req.params.pk, 10))
+    if (!ctx) return
+    if (!['ACCEPTED', 'ASSIGNED'].includes(ctx.trip.status)) {
+      return res.status(400).json({ detail: 'Cannot mark arrived in current state' })
+    }
+    await prisma.trip.update({ where: { id: ctx.trip.id }, data: { status: 'ARRIVED' } })
+    broadcastToTrip(ctx.trip.id, { type: 'trip.update', status: 'ARRIVED', trip_id: ctx.trip.id })
+    return res.json({ detail: 'Trip marked as arrived' })
+  }),
+)
+
 // ---------- POST /:pk/reject/ ----------
 
 router.post(
@@ -366,7 +385,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const ctx = await requireOwnTrip(req, res, parseInt(req.params.pk, 10))
     if (!ctx) return
-    if (!['ACCEPTED', 'ASSIGNED'].includes(ctx.trip.status)) {
+    if (!['ACCEPTED', 'ASSIGNED', 'ARRIVED'].includes(ctx.trip.status)) {
       return res.status(400).json({ detail: 'Cannot start in current state' })
     }
     await prisma.trip.update({ where: { id: ctx.trip.id }, data: { status: 'STARTED', startedAt: new Date() } })
@@ -403,7 +422,7 @@ router.post(
     const trip = await requireOwnTripAsPassenger(req, res, pk)
     if (!trip) return
 
-    if (!['REQUESTED', 'ASSIGNED', 'ACCEPTED'].includes(trip.status)) {
+    if (!['REQUESTED', 'ASSIGNED', 'ACCEPTED', 'ARRIVED'].includes(trip.status)) {
       return res.status(400).json({ detail: 'Cannot cancel in current state' })
     }
 
