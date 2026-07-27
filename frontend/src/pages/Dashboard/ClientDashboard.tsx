@@ -14,6 +14,11 @@ import {
   updateTripPaymentMethod,
   rateTrip,
   skipTripRating,
+  getChauffeurRatingSummary,
+  shareTrip,
+  triggerSos,
+  validatePromoCode,
+  getLoyaltyStatus,
 } from '../../lib/api'
 import PaymentModal from '../../components/PaymentModal'
 import TripDetailModal from '../../components/TripDetailModal'
@@ -64,25 +69,42 @@ export default function ClientDashboard() {
   const [destinationText, setDestinationText] = useState('')
   const [originPoint, setOriginPoint] = useState<Point | null>(null)
   const [destinationPoint, setDestinationPoint] = useState<Point | null>(null)
+  const [stops, setStops] = useState<{ id: string; text: string; point: Point | null }[]>([])
   const [route, setRoute] = useState<Route | null>(null)
   const [routeLoading, setRouteLoading] = useState(false)
-  const [estimate, setEstimate] = useState<{ price: number; distanceKm: number } | null>(null)
+  const [estimate, setEstimate] = useState<{ price: number; distanceKm: number; priceMin?: number; priceMax?: number } | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [vehicleType, setVehicleType] = useState('CAR')
   const [paymentMethod, setPaymentMethod] = useState('CASH')
+  const [scheduleEnabled, setScheduleEnabled] = useState(false)
+  const [scheduledAtInput, setScheduledAtInput] = useState('')
+  const [promoCodeInput, setPromoCodeInput] = useState('')
+  const [promoChecking, setPromoChecking] = useState(false)
+  const [promoResult, setPromoResult] = useState<{ valid: boolean; discount_pct?: number; detail?: string } | null>(null)
+  const [loyalty, setLoyalty] = useState<{ completed_trips: number; threshold: number; progress: number; available: number } | null>(null)
+  const [useLoyaltyReward, setUseLoyaltyReward] = useState(false)
 
   const [activeTrip, setActiveTrip] = useState<ActiveTrip | null>(null)
   const [completedTrip, setCompletedTrip] = useState<ActiveTrip | null>(null)
   const [completedTripPayment, setCompletedTripPayment] = useState<{ id: number; status: string } | null>(null)
   const [cancelling, setCancelling] = useState(false)
+  const [sharingTrip, setSharingTrip] = useState(false)
+  const [sosSubmitting, setSosSubmitting] = useState(false)
   const [changingVehicleType, setChangingVehicleType] = useState(false)
   const [changingPaymentMethod, setChangingPaymentMethod] = useState(false)
   const [ratingSubmitting, setRatingSubmitting] = useState(false)
   const [driverEtaMin, setDriverEtaMin] = useState<number | null>(null)
+  const [driverRating, setDriverRating] = useState<{ average: number | null; count: number } | null>(null)
   const tripSocketRef = useRef<Socket | null>(null)
   // Guards against handling the same trip's terminal transition (cancel/complete) twice —
   // it can be reported both by the direct REST response and by the trip socket broadcast.
   const terminalHandledTripIdRef = useRef<number | null>(null)
+
+  const refreshLoyalty = () => {
+    getLoyaltyStatus()
+      .then((r) => setLoyalty(r.data))
+      .catch(() => {})
+  }
 
   useEffect(() => {
     async function load() {
@@ -99,6 +121,7 @@ export default function ClientDashboard() {
       } finally {
         setTripsLoading(false)
       }
+      refreshLoyalty()
     }
     load()
   }, [])
@@ -194,24 +217,52 @@ export default function ClientDashboard() {
     }
   }, [activeTrip?.driver_detail?.id, activeTrip?.status])
 
+  // Fetch the assigned driver's rating history once — shown before the ride even starts,
+  // not just after, so the passenger isn't flying blind on who's picking them up.
+  useEffect(() => {
+    const driverId = activeTrip?.driver_detail?.id
+    if (!driverId) {
+      setDriverRating(null)
+      return
+    }
+    let cancelled = false
+    getChauffeurRatingSummary(driverId)
+      .then((r) => {
+        if (!cancelled) setDriverRating(r.data)
+      })
+      .catch(() => {
+        if (!cancelled) setDriverRating(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeTrip?.driver_detail?.id])
+
+  // Only feed complete stops (address picked) into the route calculation — a stop row the
+  // passenger added but hasn't filled in yet must not silently break the route/estimate.
+  const stopPoints = useMemo(() => stops.map((s) => s.point).filter((p): p is Point => !!p), [stops])
+  const stopsReady = stops.length === stopPoints.length
+
   // Whenever both points are known, fetch the real road route + a live price estimate.
   useEffect(() => {
     let cancelled = false
     async function computeRoute() {
-      if (!originPoint || !destinationPoint) {
+      if (!originPoint || !destinationPoint || !stopsReady) {
         setRoute(null)
         setEstimate(null)
         return
       }
       setRouteLoading(true)
-      const r = await getRoute(originPoint, destinationPoint)
+      const r = await getRoute(originPoint, destinationPoint, stopPoints)
       if (cancelled) return
       const distanceKm = r?.distanceKm ?? haversineKm(originPoint, destinationPoint)
       setRoute(r)
       setRouteLoading(false)
       try {
         const est = await estimatePrice({ distance_km: distanceKm, vehicle_type: vehicleType, mode: 'PRIVATE' })
-        if (!cancelled) setEstimate({ price: est.data.price, distanceKm })
+        if (!cancelled) {
+          setEstimate({ price: est.data.price, distanceKm, priceMin: est.data.price_min, priceMax: est.data.price_max })
+        }
       } catch {
         if (!cancelled) setEstimate(null)
       }
@@ -220,7 +271,34 @@ export default function ClientDashboard() {
     return () => {
       cancelled = true
     }
-  }, [originPoint, destinationPoint, vehicleType])
+  }, [originPoint, destinationPoint, vehicleType, stopPoints, stopsReady])
+
+  const handleCheckPromoCode = async () => {
+    const code = promoCodeInput.trim()
+    if (!code) return
+    setPromoChecking(true)
+    setPromoResult(null)
+    try {
+      const r = await validatePromoCode(code)
+      setPromoResult(r.data)
+    } catch (e: any) {
+      setPromoResult({ valid: false, detail: e?.response?.data?.detail || 'Erreur de vérification' })
+    } finally {
+      setPromoChecking(false)
+    }
+  }
+
+  const MAX_STOPS = 2
+
+  const addStop = () => {
+    if (stops.length >= MAX_STOPS) return
+    setStops((prev) => [...prev, { id: `${Date.now()}-${Math.random()}`, text: '', point: null }])
+  }
+  const removeStop = (id: string) => setStops((prev) => prev.filter((s) => s.id !== id))
+  const stopTextChange = (id: string, text: string) =>
+    setStops((prev) => prev.map((s) => (s.id === id ? { ...s, text, point: text ? s.point : null } : s)))
+  const stopSelect = (id: string, r: { label: string; lat: number; lng: number }) =>
+    setStops((prev) => prev.map((s) => (s.id === id ? { ...s, text: r.label, point: { lat: r.lat, lng: r.lng } } : s)))
 
   // Clears the origin/destination form + map trace — only once a trip is truly over
   // (cancelled or completed), not right after submission, so the route stays drawn
@@ -230,6 +308,12 @@ export default function ClientDashboard() {
     setDestinationText('')
     setOriginPoint(null)
     setDestinationPoint(null)
+    setStops([])
+    setScheduleEnabled(false)
+    setScheduledAtInput('')
+    setPromoCodeInput('')
+    setPromoResult(null)
+    setUseLoyaltyReward(false)
   }
 
   // Looks up the most recent transaction the passenger created for a given trip, so the
@@ -264,7 +348,11 @@ export default function ClientDashboard() {
     return () => clearInterval(id)
   }, [completedTrip, completedTripPayment?.status])
 
-  const canRequest = !!originPoint && !!destinationPoint && !submitting
+  const scheduledDate = scheduledAtInput ? new Date(scheduledAtInput) : null
+  // Scheduling requires a price estimate up front — the deposit is a cut of it — so a
+  // scheduled request additionally needs `estimate` to be resolved, unlike an immediate one.
+  const scheduleReady = !scheduleEnabled || (!!scheduledDate && scheduledDate.getTime() > Date.now() && !!estimate)
+  const canRequest = !!originPoint && !!destinationPoint && stopsReady && scheduleReady && (!useLoyaltyReward || !!estimate) && !submitting
 
   const requestTrip = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -279,22 +367,35 @@ export default function ClientDashboard() {
         destination: destinationText,
         dest_lat: destinationPoint!.lat,
         dest_lng: destinationPoint!.lng,
+        stops: stops.map((s) => ({ label: s.text, lat: s.point!.lat, lng: s.point!.lng })),
         mode: 'PRIVATE',
         vehicle_type: vehicleType,
         distance_km: estimate?.distanceKm,
         payment_method: paymentMethod,
+        scheduled_at: scheduleEnabled ? scheduledDate!.toISOString() : undefined,
+        promo_code: !useLoyaltyReward && promoResult?.valid ? promoCodeInput.trim() : undefined,
+        use_loyalty_reward: useLoyaltyReward || undefined,
       })
       const trip = resp.data
       setActiveTrip(trip)
       setCompletedTrip(null)
       setCompletedTripPayment(null)
       addRecent({ label: destinationText, lat: destinationPoint!.lat, lng: destinationPoint!.lng })
+      const discountNote = useLoyaltyReward ? ' (course gratuite — fidélité)' : trip.discount_amount ? ` (code promo : -${trip.discount_amount} XOF)` : ''
       addToast({
-        message: trip.price
-          ? `Course créée — estimation ${trip.price} XOF (${trip.distance_km?.toFixed?.(1) ?? '—'} km). En attente d'un chauffeur.`
-          : "Course créée. En attente d'un chauffeur.",
+        message: trip.status === 'SCHEDULED'
+          ? `Course programmée pour ${new Date(trip.scheduled_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} — acompte de ${trip.deposit_amount} XOF réglé (simulé).`
+          : trip.price
+            ? `Course créée — estimation ${trip.price} XOF${discountNote} (${trip.distance_km?.toFixed?.(1) ?? '—'} km). En attente d'un chauffeur.`
+            : "Course créée. En attente d'un chauffeur.",
         tone: 'success',
       })
+      setScheduleEnabled(false)
+      setScheduledAtInput('')
+      setPromoCodeInput('')
+      setPromoResult(null)
+      if (useLoyaltyReward) refreshLoyalty()
+      setUseLoyaltyReward(false)
       const t = await getMyTrips()
       setTrips(t.data)
       const r = await getAvailableChauffeurs()
@@ -340,6 +441,7 @@ export default function ClientDashboard() {
     setCompletedTrip(null)
     setCompletedTripPayment(null)
     resetRouteForm()
+    refreshLoyalty()
   }
 
   const handleRateTrip = async (trip: ActiveTrip, rating: number, comment?: string) => {
@@ -389,6 +491,41 @@ export default function ClientDashboard() {
       addToast({ message: e?.response?.data?.detail || "Erreur lors de l'annulation", tone: 'error' })
     } finally {
       setCancelling(false)
+    }
+  }
+
+  const handleShareTrip = async () => {
+    if (!activeTrip) return
+    setSharingTrip(true)
+    try {
+      const r = await shareTrip(activeTrip.id)
+      const url = `${window.location.origin}/share/trip/${r.data.share_token}`
+      try {
+        await navigator.clipboard.writeText(url)
+        addToast({ message: 'Lien de suivi copié dans le presse-papiers !', tone: 'success' })
+      } catch {
+        addToast({ message: `Lien de suivi : ${url}`, tone: 'info' })
+      }
+    } catch (e: any) {
+      addToast({ message: e?.response?.data?.detail || 'Erreur lors de la création du lien de suivi', tone: 'error' })
+    } finally {
+      setSharingTrip(false)
+    }
+  }
+
+  const handleSos = async () => {
+    if (!activeTrip) return
+    setSosSubmitting(true)
+    try {
+      await triggerSos(activeTrip.id, myPosition?.lat, myPosition?.lng)
+      addToast({ message: "Alerte envoyée à notre équipe avec votre position.", tone: 'success' })
+    } catch (e: any) {
+      addToast({ message: e?.response?.data?.detail || "Erreur lors de l'envoi de l'alerte — appelez directement les secours.", tone: 'error' })
+    } finally {
+      setSosSubmitting(false)
+      // Opens the phone dialer regardless of whether the alert reached our servers —
+      // an emergency call must never be blocked by a network hiccup.
+      window.location.href = `tel:${import.meta.env.VITE_EMERGENCY_PHONE || '17'}`
     }
   }
 
@@ -514,6 +651,7 @@ export default function ClientDashboard() {
             onSkipRating={handleSkipRating}
             ratingSubmitting={ratingSubmitting}
             driverEtaMin={driverEtaMin}
+            driverRating={driverRating}
             originText={originText}
             destinationText={destinationText}
             onOriginChange={(v) => {
@@ -534,6 +672,24 @@ export default function ClientDashboard() {
             }}
             myPosition={myPosition}
             originPoint={originPoint}
+            stops={stops}
+            onAddStop={addStop}
+            onRemoveStop={removeStop}
+            onStopTextChange={stopTextChange}
+            onStopSelect={stopSelect}
+            maxStops={MAX_STOPS}
+            scheduleEnabled={scheduleEnabled}
+            onScheduleToggle={setScheduleEnabled}
+            scheduledAtInput={scheduledAtInput}
+            onScheduledAtChange={setScheduledAtInput}
+            promoCodeInput={promoCodeInput}
+            onPromoCodeChange={(v) => { setPromoCodeInput(v); setPromoResult(null) }}
+            onCheckPromoCode={handleCheckPromoCode}
+            promoChecking={promoChecking}
+            promoResult={promoResult}
+            loyaltyAvailable={loyalty?.available ?? 0}
+            useLoyaltyReward={useLoyaltyReward}
+            onToggleLoyaltyReward={setUseLoyaltyReward}
             routeLoading={routeLoading}
             estimate={estimate}
             route={route}
@@ -550,6 +706,10 @@ export default function ClientDashboard() {
             changingVehicleType={changingVehicleType}
             onChangeActivePaymentMethod={handleChangeActivePaymentMethod}
             changingPaymentMethod={changingPaymentMethod}
+            onShareTrip={handleShareTrip}
+            sharingTrip={sharingTrip}
+            onSos={handleSos}
+            sosSubmitting={sosSubmitting}
           />
           </Card>
         </Reveal>

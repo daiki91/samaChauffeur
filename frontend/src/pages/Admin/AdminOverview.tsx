@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { getUsers, getAdminChauffeurs, getAdminVehicles, getAdminTrips, verifyChauffeur, rejectChauffeur } from '../../lib/api'
+import { getUsers, getAdminChauffeurs, getAdminVehicles, getAdminTrips, verifyChauffeur, rejectChauffeur, getAdminSosAlerts, resolveSosAlert } from '../../lib/api'
 import Card from '../../components/ui/Card'
 import Badge from '../../components/ui/Badge'
 import Spinner from '../../components/ui/Spinner'
 import Button from '../../components/ui/Button'
 import MiniBarChart from '../../components/admin/MiniBarChart'
 import { useToasts } from '../../components/Toasts'
-import { Users, Car, Truck, Route as RouteIcon, ShieldCheck, Activity, X, Check, Ban } from 'lucide-react'
+import { Users, Car, Truck, Route as RouteIcon, ShieldCheck, Activity, X, Check, Ban, ShieldAlert, MapPin } from 'lucide-react'
 
 type AdminUser = { id: number; username: string; phone: string; role: string; phone_verified: boolean }
 type AdminChauffeur = {
@@ -20,6 +20,18 @@ type AdminChauffeur = {
   vehicle: { id: number; type: string; seats: number; plate_number: string } | null
 }
 type AdminVehicle = { id: number; type: string; seats: number; plate_number: string }
+type SosAlert = {
+  id: number
+  trip_id: number
+  trip_origin: string
+  trip_destination: string
+  passenger_username: string
+  passenger_phone: string
+  latitude: number | null
+  longitude: number | null
+  resolved: boolean
+  created_at: string
+}
 type AdminTrip = {
   id: number
   origin: string
@@ -79,17 +91,20 @@ export default function AdminOverview() {
   const [tab, setTab] = useState<Tab>('clients')
   const [reviewing, setReviewing] = useState<AdminChauffeur | null>(null)
   const [acting, setActing] = useState<'accept' | 'reject' | null>(null)
+  const [sosAlerts, setSosAlerts] = useState<SosAlert[]>([])
+  const [resolvingSos, setResolvingSos] = useState<number | null>(null)
 
   useEffect(() => {
     let active = true
     async function load() {
       try {
-        const [u, c, v, t] = await Promise.all([getUsers(), getAdminChauffeurs(), getAdminVehicles(), getAdminTrips()])
+        const [u, c, v, t, s] = await Promise.all([getUsers(), getAdminChauffeurs(), getAdminVehicles(), getAdminTrips(), getAdminSosAlerts()])
         if (!active) return
         setUsers(u.data)
         setChauffeurs(c.data)
         setVehicles(v.data)
         setTrips(t.data)
+        setSosAlerts(s.data)
       } catch (e) {
         // ignore — sections just stay empty
       } finally {
@@ -101,6 +116,32 @@ export default function AdminOverview() {
       active = false
     }
   }, [])
+
+  // SOS alerts are time-critical — refresh them on their own short cadence so an admin who's
+  // just looking at the page (no action needed) still notices a new one reasonably quickly.
+  useEffect(() => {
+    const id = setInterval(() => {
+      getAdminSosAlerts()
+        .then((r) => setSosAlerts(r.data))
+        .catch(() => {})
+    }, 20000)
+    return () => clearInterval(id)
+  }, [])
+
+  const unresolvedSos = useMemo(() => sosAlerts.filter((a) => !a.resolved), [sosAlerts])
+
+  const handleResolveSos = async (id: number) => {
+    setResolvingSos(id)
+    try {
+      await resolveSosAlert(id)
+      setSosAlerts((prev) => prev.map((a) => (a.id === id ? { ...a, resolved: true } : a)))
+      addToast({ message: 'Alerte marquée comme résolue.', tone: 'success' })
+    } catch (e: any) {
+      addToast({ message: e?.response?.data?.detail || "Erreur lors de la résolution de l'alerte", tone: 'error' })
+    } finally {
+      setResolvingSos(null)
+    }
+  }
 
   const clients = useMemo(() => users.filter((u) => u.role === 'CLIENT'), [users])
 
@@ -183,6 +224,45 @@ export default function AdminOverview() {
         <h1 className="text-2xl font-bold text-stone-900">Vue d'ensemble</h1>
         <p className="text-stone-500 text-sm">Suivi global de la plateforme : clients, chauffeurs, véhicules et courses.</p>
       </div>
+
+      {unresolvedSos.length > 0 && (
+        <Card className="mb-6 !border-red-200 !bg-red-50">
+          <h2 className="font-semibold text-red-700 mb-3 flex items-center gap-2">
+            <ShieldAlert size={18} />
+            Alertes SOS en cours ({unresolvedSos.length})
+          </h2>
+          <div className="space-y-2">
+            {unresolvedSos.map((a) => (
+              <div key={a.id} className="flex items-center justify-between gap-3 bg-white rounded-xl border border-red-100 px-4 py-3">
+                <div className="min-w-0">
+                  <div className="font-medium text-stone-800 truncate">
+                    {a.passenger_username} · {a.passenger_phone}
+                  </div>
+                  <div className="text-xs text-stone-500 truncate">
+                    Course #{a.trip_id} — {a.trip_origin} → {a.trip_destination}
+                  </div>
+                  <div className="text-xs text-stone-400">{formatDateTime(a.created_at)}</div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {a.latitude != null && a.longitude != null && (
+                    <a
+                      href={`https://www.openstreetmap.org/?mlat=${a.latitude}&mlon=${a.longitude}#map=16/${a.latitude}/${a.longitude}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700"
+                    >
+                      <MapPin size={13} /> Position
+                    </a>
+                  )}
+                  <Button size="sm" variant="danger" loading={resolvingSos === a.id} onClick={() => handleResolveSos(a.id)}>
+                    Marquer résolu
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Stat cards */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">

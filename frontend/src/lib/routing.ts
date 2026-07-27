@@ -13,9 +13,12 @@ export type Route = {
 export async function getRoute(
   origin: { lat: number; lng: number },
   destination: { lat: number; lng: number },
+  waypoints: { lat: number; lng: number }[] = [],
 ): Promise<Route | null> {
   try {
-    const url = `${OSRM_BASE}/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?overview=full&geometries=geojson`
+    const points = [origin, ...waypoints, destination]
+    const coordsParam = points.map((p) => `${p.lng},${p.lat}`).join(';')
+    const url = `${OSRM_BASE}/${coordsParam}?overview=full&geometries=geojson`
     const resp = await fetch(url)
     if (!resp.ok) return null
     const data = await resp.json()

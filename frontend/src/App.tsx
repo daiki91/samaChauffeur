@@ -14,6 +14,7 @@ import DriverDashboard from './pages/Driver/DriverDashboard'
 import DriverStats from './pages/Driver/DriverStats'
 import AdminOverview from './pages/Admin/AdminOverview'
 import Home from './pages/Home/Home'
+import SharedTrip from './pages/Share/SharedTrip'
 import RequireClient from './components/RequireClient'
 import RequireAdmin from './components/RequireAdmin'
 import RequireAuth from './components/RequireAuth'
@@ -81,6 +82,7 @@ const router = createBrowserRouter([
       { path: 'onboard', element: <div className="text-center py-20">Onboarding pages coming soon</div> },
       { path: 'onboard/chauffeur', element: <RequireAuth><ChauffeurOnboard /></RequireAuth> },
       { path: 'map', element: <DriverMap /> },
+      { path: 'share/trip/:token', element: <SharedTrip /> },
       { path: 'driver-map', element: <RequireChauffeur><DriverDashboard /></RequireChauffeur> },
       { path: 'espace-chauffeur', element: <RequireChauffeur><DriverStats /></RequireChauffeur> },
       { path: 'dashboard', element: <RequireClient><ClientDashboard /></RequireClient> },

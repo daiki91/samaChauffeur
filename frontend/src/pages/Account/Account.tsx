@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Phone, UserRound, ShieldCheck, PhoneCall, Trash2, X, Lock, Pencil, Check, Languages } from 'lucide-react'
+import { ArrowLeft, Phone, UserRound, ShieldCheck, PhoneCall, Trash2, X, Lock, Pencil, Check, Languages, Camera, Gift, Copy, Award } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
-import { deleteAccount, updateMe } from '../../lib/api'
+import { deleteAccount, updateMe, getMyChauffeurProfile, updateChauffeurPhoto, getMyClientProfile, getLoyaltyStatus } from '../../lib/api'
 import { useToasts } from '../../components/Toasts'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
@@ -29,6 +29,71 @@ export default function Account() {
   const [usernameDraft, setUsernameDraft] = useState('')
   const [savingUsername, setSavingUsername] = useState(false)
   const [savingLanguage, setSavingLanguage] = useState(false)
+
+  const [driverPhoto, setDriverPhoto] = useState<string | null>(null)
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const photoInputRef = useRef<HTMLInputElement>(null)
+  const [referralCode, setReferralCode] = useState<string | null>(null)
+  const [loyalty, setLoyalty] = useState<{ completed_trips: number; threshold: number; progress: number; available: number } | null>(null)
+
+  useEffect(() => {
+    if (user?.role !== 'CHAUFFEUR') return
+    getMyChauffeurProfile()
+      .then((res) => setDriverPhoto(res.data.photo || null))
+      .catch(() => {})
+  }, [user?.role])
+
+  useEffect(() => {
+    if (user?.role !== 'CLIENT') return
+    getMyClientProfile()
+      .then((res) => setReferralCode(res.data.referral_code || null))
+      .catch(() => {})
+    getLoyaltyStatus()
+      .then((res) => setLoyalty(res.data))
+      .catch(() => {})
+  }, [user?.role])
+
+  const copyReferralCode = async () => {
+    if (!referralCode) return
+    try {
+      await navigator.clipboard.writeText(referralCode)
+      addToast({ message: 'Code de parrainage copié !', tone: 'success' })
+    } catch {
+      addToast({ message: `Votre code : ${referralCode}`, tone: 'info' })
+    }
+  }
+
+  const handlePhotoPick = () => photoInputRef.current?.click()
+
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      addToast({ message: 'Choisissez un fichier image.', tone: 'error' })
+      return
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      addToast({ message: 'Image trop lourde (max 3 Mo).', tone: 'error' })
+      return
+    }
+    const dataUrl: string = await new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
+    setUploadingPhoto(true)
+    try {
+      await updateChauffeurPhoto(dataUrl)
+      setDriverPhoto(dataUrl)
+      addToast({ message: 'Photo de profil mise à jour.', tone: 'success' })
+    } catch (e: any) {
+      addToast({ message: e?.response?.data?.detail || 'Erreur lors de l\'envoi de la photo', tone: 'error' })
+    } finally {
+      setUploadingPhoto(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -109,9 +174,13 @@ export default function Account() {
       <Reveal variant="up">
         <Card className="mb-6 transition-shadow duration-300 hover:shadow-floating">
           <div className="flex items-center gap-3 mb-5">
-            <span className="grid place-items-center w-14 h-14 rounded-full bg-warm-gradient text-white font-bold uppercase text-lg shrink-0">
-              {user.username?.slice(0, 2)}
-            </span>
+            {driverPhoto ? (
+              <img src={driverPhoto} alt={user.username} className="w-14 h-14 rounded-full object-cover shrink-0 border-2 border-white dark:border-stone-800 shadow-card" />
+            ) : (
+              <span className="grid place-items-center w-14 h-14 rounded-full bg-warm-gradient text-white font-bold uppercase text-lg shrink-0">
+                {user.username?.slice(0, 2)}
+              </span>
+            )}
             <div className="min-w-0">
               <div className="font-semibold text-stone-900 dark:text-stone-50 truncate">{user.username}</div>
               <span className="inline-flex items-center gap-1 text-xs font-medium text-stone-500 dark:text-stone-400">
@@ -205,6 +274,84 @@ export default function Account() {
           </div>
         </Card>
       </Reveal>
+
+      {user.role === 'CLIENT' && loyalty && (
+        <Reveal variant="up" delay={100}>
+          <Card className="mb-6 transition-shadow duration-300 hover:shadow-floating">
+            <h2 className="font-semibold text-stone-800 dark:text-stone-100 mb-1 flex items-center gap-2">
+              <Award size={16} className="text-brand-600" />
+              Programme de fidélité
+            </h2>
+            <p className="text-xs text-stone-500 dark:text-stone-400 mb-3">
+              Une course gratuite tous les {loyalty.threshold} trajets terminés.
+            </p>
+            {loyalty.available > 0 ? (
+              <div className="rounded-xl bg-secondary-50 dark:bg-secondary-500/10 border border-secondary-200 dark:border-secondary-500/20 px-4 py-3 flex items-center gap-2 text-sm font-medium text-secondary-700 dark:text-secondary-400">
+                <Gift size={16} />
+                {loyalty.available} course{loyalty.available > 1 ? 's' : ''} gratuite{loyalty.available > 1 ? 's' : ''} disponible{loyalty.available > 1 ? 's' : ''} !
+              </div>
+            ) : (
+              <div>
+                <div className="h-2 rounded-full bg-stone-100 dark:bg-stone-800 overflow-hidden">
+                  <div
+                    className="h-full bg-brand-500 rounded-full transition-all duration-500"
+                    style={{ width: `${(loyalty.progress / loyalty.threshold) * 100}%` }}
+                  />
+                </div>
+                <div className="mt-1.5 text-xs text-stone-500 dark:text-stone-400">
+                  {loyalty.progress} / {loyalty.threshold} courses — encore {loyalty.threshold - loyalty.progress} avant votre prochaine course gratuite.
+                </div>
+              </div>
+            )}
+          </Card>
+        </Reveal>
+      )}
+
+      {user.role === 'CLIENT' && referralCode && (
+        <Reveal variant="up" delay={110}>
+          <Card className="mb-6 transition-shadow duration-300 hover:shadow-floating">
+            <h2 className="font-semibold text-stone-800 dark:text-stone-100 mb-1 flex items-center gap-2">
+              <Gift size={16} className="text-brand-600" />
+              Parrainage
+            </h2>
+            <p className="text-xs text-stone-500 dark:text-stone-400 mb-3">
+              Partagez ce code : vos proches profitent de 10% de réduction sur leur première course.
+            </p>
+            <button
+              onClick={copyReferralCode}
+              className="w-full flex items-center justify-between rounded-xl border border-dashed border-brand-300 dark:border-brand-700 bg-brand-50 dark:bg-brand-500/10 px-4 py-3 hover:bg-brand-100 dark:hover:bg-brand-500/20 transition-colors"
+            >
+              <span className="font-mono font-bold text-brand-700 dark:text-brand-400 tracking-wider">{referralCode}</span>
+              <Copy size={16} className="text-brand-500" />
+            </button>
+          </Card>
+        </Reveal>
+      )}
+
+      {user.role === 'CHAUFFEUR' && (
+        <Reveal variant="up" delay={110}>
+          <Card className="mb-6 transition-shadow duration-300 hover:shadow-floating">
+            <h2 className="font-semibold text-stone-800 dark:text-stone-100 mb-1 flex items-center gap-2">
+              <Camera size={16} className="text-brand-600" />
+              Photo de profil
+            </h2>
+            <p className="text-xs text-stone-500 dark:text-stone-400 mb-3">Affichée aux passagers dès qu'un trajet vous est attribué.</p>
+            <div className="flex items-center gap-4">
+              {driverPhoto ? (
+                <img src={driverPhoto} alt="Photo de profil" className="w-16 h-16 rounded-full object-cover border-2 border-white dark:border-stone-800 shadow-card shrink-0" />
+              ) : (
+                <span className="grid place-items-center w-16 h-16 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-400 dark:text-stone-500 shrink-0">
+                  <UserRound size={26} />
+                </span>
+              )}
+              <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
+              <Button variant="outline" size="sm" loading={uploadingPhoto} onClick={handlePhotoPick} icon={<Camera size={14} />}>
+                {driverPhoto ? 'Changer la photo' : 'Ajouter une photo'}
+              </Button>
+            </div>
+          </Card>
+        </Reveal>
+      )}
 
       <Reveal variant="up" delay={140}>
         <Card className="mb-6 transition-shadow duration-300 hover:shadow-floating">
