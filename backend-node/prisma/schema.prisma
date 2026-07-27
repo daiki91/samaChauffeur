@@ -39,6 +39,7 @@ enum TripMode {
 }
 
 enum TripStatus {
+  SCHEDULED
   REQUESTED
   ASSIGNED
   ACCEPTED
@@ -97,6 +98,7 @@ model User {
   tripRatings    TripRating[]
   auditLogs      AuditLog[]
   refreshTokens  RefreshToken[]
+  sosAlerts      SosAlert[]
 
   @@map("users")
 }
@@ -148,6 +150,7 @@ model Chauffeur {
 
   permit     String?
   insurance  String?
+  photo      String?
   isVerified Boolean  @default(false) @map("is_verified")
   isAvailable Boolean @default(true) @map("is_available")
 
@@ -191,6 +194,9 @@ model Trip {
   destLat     Float? @map("dest_lat")
   destLng     Float? @map("dest_lng")
 
+  // Ordered intermediate stops: [{ label, lat, lng }] — multi-stop trips.
+  stops Json? @map("stops")
+
   distanceKm        Float? @map("distance_km")
   estimatedDuration Int?   @map("estimated_duration")
 
@@ -204,11 +210,41 @@ model Trip {
   startedAt DateTime? @map("started_at")
   endedAt   DateTime? @map("ended_at")
 
+  // Courses programmées: booked for a future time instead of "now" — held as SCHEDULED
+  // (invisible to drivers) until scheduledTripsJob promotes it to REQUESTED at the due time.
+  scheduledAt   DateTime? @map("scheduled_at")
+  depositAmount Int?      @map("deposit_amount")
+
+  // Live trip sharing: an unguessable token letting a friend/family member follow the ride
+  // from a public, unauthenticated link — GET /trips/shared/:token/.
+  shareToken String? @unique @map("share_token")
+
+  // Promo code or a friend's referral code applied at booking time.
+  promoCode      String? @map("promo_code")
+  discountAmount Int?    @map("discount_amount")
+
   tripPassengers TripPassenger[]
   supportTickets SupportTicket[]
   rating         TripRating?
+  sosAlerts      SosAlert[]
 
   @@map("trips")
+}
+
+// SOS/urgence: discreet in-ride alert — persists for the admin to see and pairs with the
+// passenger's app immediately opening a tel: link to an emergency number (see clarifications).
+model SosAlert {
+  id          Int      @id @default(autoincrement())
+  tripId      Int      @map("trip_id")
+  trip        Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  passengerId Int      @map("passenger_id")
+  passenger   User     @relation(fields: [passengerId], references: [id], onDelete: Cascade)
+  latitude    Float?
+  longitude   Float?
+  resolved    Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("sos_alerts")
 }
 
 model TripRating {
@@ -252,6 +288,21 @@ model PricingRule {
   @@map("pricing_rules")
 }
 
+// Admin-issued promo code — distinct from a personal referral code (ClientProfile.referralCode),
+// which gives the same kind of discount but needs no admin-created row.
+model PromoCode {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique
+  discountPct Int       @map("discount_pct")
+  maxUses     Int?      @map("max_uses")
+  usedCount   Int       @default(0) @map("used_count")
+  active      Boolean   @default(true)
+  expiresAt   DateTime? @map("expires_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@map("promo_codes")
+}
+
 // ---------- clients ----------
 
 model ClientProfile {
@@ -262,6 +313,14 @@ model ClientProfile {
   isActive  Boolean  @default(true) @map("is_active")
   language  Language @default(fr)
   createdAt DateTime @default(now()) @map("created_at")
+
+  // Parrainage: shareable code, derived from userId so it's always unique with no collision
+  // handling needed — redeeming a friend's code gives a flat discount on your first request.
+  referralCode String? @unique @map("referral_code")
+
+  // Programme de fidélité: free rides earned are derived from COMPLETED trip count
+  // (LOYALTY_THRESHOLD in trips.routes.ts) minus this counter, so it only tracks redemptions.
+  loyaltyRedeemed Int @default(0) @map("loyalty_redeemed")
 
   supportTickets SupportTicket[]
   transactions   Transaction[]

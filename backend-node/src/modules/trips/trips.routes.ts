@@ -1,10 +1,11 @@
 import { Router } from 'express'
+import { randomUUID } from 'crypto'
 import { z } from 'zod'
 import prisma from '../../lib/prisma'
 import { asyncHandler } from '../../utils/asyncHandler'
 import { authenticate, requireAdmin } from '../../middleware/auth'
 import { haversine } from '../../utils/haversine'
-import { estimatePrice, NoPricingRuleError } from '../pricing/pricing.service'
+import { estimatePrice, NoPricingRuleError, resolvePromoCode, InvalidPromoCodeError } from '../pricing/pricing.service'
 import { broadcastToDrivers, broadcastToTrip } from '../../realtime/socket'
 
 const router = Router()
@@ -16,7 +17,7 @@ const PAYMENT_METHODS = ['CASH', 'ORANGE'] as const
 // their last known position — keeps drivers from taking rides they'd have to cross town for.
 const MAX_CLAIM_RADIUS_KM = 5
 
-function toTrip(t: any) {
+export function toTrip(t: any) {
   return {
     id: t.id,
     passenger: t.passengerId,
@@ -26,6 +27,7 @@ function toTrip(t: any) {
           id: t.driver.id,
           username: t.driver.user?.username,
           phone: t.driver.user?.phone,
+          photo: t.driver.photo,
           vehicle: t.driver.vehicle
             ? { type: t.driver.vehicle.type, plate_number: t.driver.vehicle.plateNumber, seats: t.driver.vehicle.seats }
             : null,
@@ -37,6 +39,11 @@ function toTrip(t: any) {
     destination: t.destination,
     dest_lat: t.destLat,
     dest_lng: t.destLng,
+    stops: t.stops ?? [],
+    scheduled_at: t.scheduledAt,
+    deposit_amount: t.depositAmount,
+    promo_code: t.promoCode,
+    discount_amount: t.discountAmount,
     distance_km: t.distanceKm,
     estimated_duration: t.estimatedDuration,
     mode: t.mode,
@@ -61,6 +68,12 @@ function toTrip(t: any) {
 
 // ---------- POST /create/ ----------
 
+const stopSchema = z.object({
+  label: z.string().min(1),
+  lat: z.number().optional(),
+  lng: z.number().optional(),
+})
+
 const createTripSchema = z
   .object({
     origin: z.string().min(1),
@@ -69,10 +82,14 @@ const createTripSchema = z
     destination: z.string().min(1),
     dest_lat: z.number().optional(),
     dest_lng: z.number().optional(),
+    stops: z.array(stopSchema).max(3).optional(),
     mode: z.enum(['PRIVATE', 'SHARED', 'BUS']).optional().default('PRIVATE'),
     vehicle_type: z.enum(VEHICLE_TYPES).optional().default('CAR'),
     payment_method: z.enum(PAYMENT_METHODS).optional().default('CASH'),
     distance_km: z.number().positive().optional(),
+    scheduled_at: z.string().datetime().optional(),
+    promo_code: z.string().optional(),
+    use_loyalty_reward: z.boolean().optional(),
   })
   .refine((v) => (v.origin_lat == null) === (v.origin_lng == null), {
     message: 'Both origin_lat and origin_lng must be provided together',
@@ -81,6 +98,29 @@ const createTripSchema = z
     message: 'Both dest_lat and dest_lng must be provided together',
   })
 
+// Courses programmées: the deposit obliges the passenger to actually show up — simulated
+// (no real payment gateway), captured as a COMPLETED transaction right away since there's
+// no driver yet at booking time to validate it against.
+const DEPOSIT_RATE = 0.2
+const MIN_DEPOSIT_XOF = 200
+
+// Programme de fidélité: one free ride earned per LOYALTY_THRESHOLD completed trips.
+// Available rides are derived (never stored) so they always reflect the live trip count.
+export const LOYALTY_THRESHOLD = 5
+
+export async function getLoyaltyStatus(userId: number) {
+  const profile = await prisma.clientProfile.findUnique({ where: { userId } })
+  const completedTrips = await prisma.trip.count({ where: { passengerId: userId, status: 'COMPLETED' } })
+  const redeemed = profile?.loyaltyRedeemed ?? 0
+  const earned = Math.floor(completedTrips / LOYALTY_THRESHOLD)
+  return {
+    completed_trips: completedTrips,
+    threshold: LOYALTY_THRESHOLD,
+    progress: completedTrips % LOYALTY_THRESHOLD,
+    available: Math.max(0, earned - redeemed),
+  }
+}
+
 router.post(
   '/create/',
   authenticate,
@@ -88,6 +128,14 @@ router.post(
     const parsed = createTripSchema.safeParse(req.body)
     if (!parsed.success) return res.status(400).json(parsed.error.flatten())
     const data = parsed.data
+
+    let scheduledAt: Date | null = null
+    if (data.scheduled_at) {
+      scheduledAt = new Date(data.scheduled_at)
+      if (scheduledAt.getTime() <= Date.now()) {
+        return res.status(400).json({ detail: 'scheduled_at must be in the future' })
+      }
+    }
 
     let distanceKm: number | null = null
     let price: number | null = null
@@ -105,6 +153,35 @@ router.post(
       }
     }
 
+    if (scheduledAt && price == null) {
+      return res.status(400).json({ detail: 'A price estimate (origin/destination coordinates) is required to schedule a trip and collect its deposit' })
+    }
+
+    let discountAmount: number | null = null
+    let appliedPromo: Awaited<ReturnType<typeof resolvePromoCode>> | null = null
+    let usedLoyaltyReward = false
+
+    if (data.use_loyalty_reward) {
+      if (price == null) return res.status(400).json({ detail: 'A price estimate is required to redeem a free ride' })
+      const loyalty = await getLoyaltyStatus(req.user!.id)
+      if (loyalty.available <= 0) return res.status(400).json({ detail: 'Aucune course gratuite disponible' })
+      discountAmount = price
+      price = 0
+      usedLoyaltyReward = true
+    } else if (data.promo_code) {
+      if (price == null) return res.status(400).json({ detail: 'A price estimate is required to apply a promo code' })
+      try {
+        appliedPromo = await resolvePromoCode(data.promo_code, req.user!.id)
+      } catch (e) {
+        if (e instanceof InvalidPromoCodeError) return res.status(400).json({ detail: e.message })
+        throw e
+      }
+      discountAmount = Math.round(price * (appliedPromo.discountPct / 100))
+      price = price - discountAmount
+    }
+
+    const depositAmount = scheduledAt ? Math.max(MIN_DEPOSIT_XOF, Math.round(price! * DEPOSIT_RATE)) : null
+
     const trip = await prisma.trip.create({
       data: {
         passengerId: req.user!.id,
@@ -114,25 +191,67 @@ router.post(
         destination: data.destination,
         destLat: data.dest_lat,
         destLng: data.dest_lng,
+        stops: data.stops ?? undefined,
         mode: data.mode,
         vehicleType: data.vehicle_type,
         paymentMethod: data.payment_method,
         distanceKm: distanceKm ?? undefined,
         price: price ?? undefined,
+        status: scheduledAt ? 'SCHEDULED' : undefined,
+        scheduledAt: scheduledAt ?? undefined,
+        depositAmount: depositAmount ?? undefined,
+        promoCode: usedLoyaltyReward ? 'LOYALTY_FREE' : appliedPromo ? data.promo_code!.trim().toUpperCase() : undefined,
+        discountAmount: discountAmount ?? undefined,
       },
     })
 
-    // Broadcast to drivers that a new trip is available to claim. This must carry the same
-    // shape as the REST /available/ list (toTrip()) — drivers append it straight into their
-    // trips list, and a payload missing `id` (previously this only sent `trip_id`) meant
-    // clicking "Prendre" on a live-arrived request sent claim/undefined/ and crashed claiming.
-    broadcastToDrivers({
-      ...toTrip(trip),
-      type: 'trip.requested',
-      trip_id: trip.id,
-    })
+    if (usedLoyaltyReward) {
+      let profile = await prisma.clientProfile.findUnique({ where: { userId: req.user!.id } })
+      if (!profile) profile = await prisma.clientProfile.create({ data: { userId: req.user!.id } })
+      await prisma.clientProfile.update({ where: { id: profile.id }, data: { loyaltyRedeemed: { increment: 1 } } })
+    } else if (appliedPromo?.kind === 'PROMO' && appliedPromo.promo) {
+      await prisma.promoCode.update({ where: { id: appliedPromo.promo.id }, data: { usedCount: { increment: 1 } } })
+    }
+
+    if (scheduledAt) {
+      // Simulated deposit — no real payment gateway, captured as COMPLETED immediately since
+      // there's no driver yet at booking time to validate it against (see validate/ below).
+      let profile = await prisma.clientProfile.findUnique({ where: { userId: req.user!.id } })
+      if (!profile) profile = await prisma.clientProfile.create({ data: { userId: req.user!.id } })
+      await prisma.transaction.create({
+        data: {
+          clientId: profile.id,
+          amount: depositAmount!,
+          currency: 'XOF',
+          method: data.payment_method,
+          status: 'COMPLETED',
+          metadata: { trip_id: trip.id, kind: 'deposit' },
+        },
+      })
+    } else {
+      // Broadcast to drivers that a new trip is available to claim. This must carry the same
+      // shape as the REST /available/ list (toTrip()) — drivers append it straight into their
+      // trips list, and a payload missing `id` (previously this only sent `trip_id`) meant
+      // clicking "Prendre" on a live-arrived request sent claim/undefined/ and crashed claiming.
+      broadcastToDrivers({
+        ...toTrip(trip),
+        type: 'trip.requested',
+        trip_id: trip.id,
+      })
+    }
 
     return res.status(201).json(toTrip(trip))
+  }),
+)
+
+// ---------- GET /loyalty/ ----------
+
+router.get(
+  '/loyalty/',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const status = await getLoyaltyStatus(req.user!.id)
+    return res.json(status)
   }),
 )
 
@@ -422,7 +541,7 @@ router.post(
     const trip = await requireOwnTripAsPassenger(req, res, pk)
     if (!trip) return
 
-    if (!['REQUESTED', 'ASSIGNED', 'ACCEPTED', 'ARRIVED'].includes(trip.status)) {
+    if (!['SCHEDULED', 'REQUESTED', 'ASSIGNED', 'ACCEPTED', 'ARRIVED'].includes(trip.status)) {
       return res.status(400).json({ detail: 'Cannot cancel in current state' })
     }
 
@@ -603,6 +722,142 @@ router.post(
       skipped: rating.skipped,
       created_at: rating.createdAt,
     })
+  }),
+)
+
+// ---------- POST /:pk/share/ (passenger) ----------
+// Live trip sharing: returns an unguessable token a friend/family member can use to follow
+// the ride, without an account, via GET /shared/:token/ below. Idempotent — reuses the
+// existing token if one was already generated for this trip.
+
+router.post(
+  '/:pk/share/',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const pk = parseInt(req.params.pk, 10)
+    const trip = await requireOwnTripAsPassenger(req, res, pk)
+    if (!trip) return
+
+    const shareToken = trip.shareToken ?? randomUUID()
+    if (!trip.shareToken) {
+      await prisma.trip.update({ where: { id: pk }, data: { shareToken } })
+    }
+    return res.json({ share_token: shareToken })
+  }),
+)
+
+// ---------- GET /shared/:token/ (public — no auth) ----------
+// Deliberately minimal: no passenger identity, no driver phone — just enough for a follower
+// to see where the ride is and that it's progressing normally.
+
+router.get(
+  '/shared/:token/',
+  asyncHandler(async (req, res) => {
+    const trip = await prisma.trip.findUnique({
+      where: { shareToken: req.params.token },
+      include: { driver: { include: { user: true, vehicle: true } } },
+    })
+    if (!trip) return res.status(404).json({ detail: 'Not found' })
+
+    const ONGOING = ['ASSIGNED', 'ACCEPTED', 'ARRIVED', 'STARTED']
+    return res.json({
+      status: trip.status,
+      origin: trip.origin,
+      origin_lat: trip.originLat,
+      origin_lng: trip.originLng,
+      destination: trip.destination,
+      dest_lat: trip.destLat,
+      dest_lng: trip.destLng,
+      distance_km: trip.distanceKm,
+      created_at: trip.createdAt,
+      driver: trip.driver
+        ? {
+            username: trip.driver.user?.username,
+            photo: trip.driver.photo,
+            vehicle: trip.driver.vehicle
+              ? { type: trip.driver.vehicle.type, plate_number: trip.driver.vehicle.plateNumber }
+              : null,
+            latitude: ONGOING.includes(trip.status) ? trip.driver.latitude : null,
+            longitude: ONGOING.includes(trip.status) ? trip.driver.longitude : null,
+          }
+        : null,
+    })
+  }),
+)
+
+// ---------- POST /:pk/sos/ (passenger) ----------
+// Discreet in-ride SOS: persists an alert for admin review and lets the client immediately
+// follow up with a real emergency call — no gating on trip status, an alert is always accepted.
+
+const sosSchema = z.object({
+  lat: z.number().optional(),
+  lng: z.number().optional(),
+})
+
+router.post(
+  '/:pk/sos/',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const pk = parseInt(req.params.pk, 10)
+    const trip = await requireOwnTripAsPassenger(req, res, pk)
+    if (!trip) return
+
+    const parsed = sosSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json(parsed.error.flatten())
+
+    const alert = await prisma.sosAlert.create({
+      data: {
+        tripId: pk,
+        passengerId: req.user!.id,
+        latitude: parsed.data.lat,
+        longitude: parsed.data.lng,
+      },
+    })
+    return res.status(201).json({ id: alert.id, created_at: alert.createdAt })
+  }),
+)
+
+// ---------- GET /admin/sos/ (admin) ----------
+
+router.get(
+  '/admin/sos/',
+  authenticate,
+  requireAdmin,
+  asyncHandler(async (_req, res) => {
+    const alerts = await prisma.sosAlert.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: { trip: true, passenger: true },
+    })
+    return res.json(
+      alerts.map((a) => ({
+        id: a.id,
+        trip_id: a.tripId,
+        trip_origin: a.trip.origin,
+        trip_destination: a.trip.destination,
+        passenger_username: a.passenger.username,
+        passenger_phone: a.passenger.phone,
+        latitude: a.latitude,
+        longitude: a.longitude,
+        resolved: a.resolved,
+        created_at: a.createdAt,
+      })),
+    )
+  }),
+)
+
+// ---------- POST /admin/sos/:pk/resolve/ (admin) ----------
+
+router.post(
+  '/admin/sos/:pk/resolve/',
+  authenticate,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const pk = parseInt(req.params.pk, 10)
+    if (Number.isNaN(pk)) return res.status(400).json({ detail: 'Invalid id' })
+    const alert = await prisma.sosAlert.findUnique({ where: { id: pk } })
+    if (!alert) return res.status(404).json({ detail: 'Not found' })
+    const updated = await prisma.sosAlert.update({ where: { id: pk }, data: { resolved: true } })
+    return res.json({ id: updated.id, resolved: updated.resolved })
   }),
 )
 

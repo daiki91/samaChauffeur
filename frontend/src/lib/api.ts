@@ -51,6 +51,11 @@ export async function getAdminVehicles() {
   return api.get('/chauffeurs/vehicles/')
 }
 
+/** Average rating + review count for a chauffeur — shown to the passenger before the ride. */
+export async function getChauffeurRatingSummary(id: number) {
+  return api.get(`/chauffeurs/${id}/rating-summary/`)
+}
+
 export async function getAdminTrips(limit = 200) {
   return api.get(`/trips/admin/all/?limit=${limit}`)
 }
@@ -139,10 +144,14 @@ export async function createTrip(payload: {
   destination: string
   dest_lat?: number
   dest_lng?: number
+  stops?: { label: string; lat?: number; lng?: number }[]
   mode?: string
   vehicle_type?: string
   distance_km?: number
   payment_method?: string
+  scheduled_at?: string
+  promo_code?: string
+  use_loyalty_reward?: boolean
 }) {
   return api.post('/trips/create/', payload)
 }
@@ -165,6 +174,27 @@ export async function rateTrip(id: number, rating: number, comment?: string) {
 
 export async function skipTripRating(id: number) {
   return api.post(`/trips/${id}/skip-rating/`)
+}
+
+export async function shareTrip(id: number) {
+  return api.post(`/trips/${id}/share/`)
+}
+
+/** Public — no auth, used by the read-only /share/trip/:token page. */
+export async function getSharedTrip(token: string) {
+  return api.get(`/trips/shared/${token}/`)
+}
+
+export async function triggerSos(id: number, lat?: number, lng?: number) {
+  return api.post(`/trips/${id}/sos/`, { lat, lng })
+}
+
+export async function getAdminSosAlerts() {
+  return api.get('/trips/admin/sos/')
+}
+
+export async function resolveSosAlert(id: number) {
+  return api.post(`/trips/admin/sos/${id}/resolve/`)
 }
 
 export async function updateTripPaymentMethod(id: number, payment_method: string) {
@@ -220,12 +250,32 @@ export async function estimatePrice(payload: { distance_km: number; vehicle_type
   return api.post('/pricing/estimate/', payload)
 }
 
+export async function validatePromoCode(code: string) {
+  return api.post('/pricing/validate-code/', { code })
+}
+
+export async function getMyClientProfile() {
+  return api.get('/clients/profile/')
+}
+
+export async function getLoyaltyStatus() {
+  return api.get('/trips/loyalty/')
+}
+
 export async function setChauffeurAvailability(is_available: boolean) {
   return api.post('/chauffeurs/availability/', { is_available })
 }
 
 export async function updateLocation(latitude: number, longitude: number) {
   return api.post('/chauffeurs/location/', { latitude, longitude })
+}
+
+export async function updateChauffeurPhoto(photo: string | null) {
+  return api.post('/chauffeurs/photo/', { photo })
+}
+
+export async function getMyChauffeurProfile() {
+  return api.get('/chauffeurs/me/')
 }
 
 export default api

@@ -7,7 +7,12 @@ import { authenticate, requireAdmin } from '../../middleware/auth'
 const router = Router()
 
 function toProfile(p: any) {
-  return { id: p.id, user: p.userId, photo: p.photo, is_active: p.isActive, language: p.language, created_at: p.createdAt }
+  return { id: p.id, user: p.userId, photo: p.photo, is_active: p.isActive, language: p.language, referral_code: p.referralCode, created_at: p.createdAt }
+}
+
+// Deterministic from userId (already unique) — no collision handling ever needed.
+function referralCodeFor(userId: number) {
+  return `SC${userId.toString(36).toUpperCase()}`
 }
 
 function toPaymentMethod(pm: any) {
@@ -24,8 +29,13 @@ router.get(
   '/profile/',
   authenticate,
   asyncHandler(async (req, res) => {
-    const profile = await prisma.clientProfile.findUnique({ where: { userId: req.user!.id } })
-    if (!profile) return res.status(404).json({ detail: 'No profile' })
+    let profile = await prisma.clientProfile.findUnique({ where: { userId: req.user!.id } })
+    if (!profile) {
+      profile = await prisma.clientProfile.create({ data: { userId: req.user!.id, referralCode: referralCodeFor(req.user!.id) } })
+    } else if (!profile.referralCode) {
+      // Backfill for profiles created before the referral system existed.
+      profile = await prisma.clientProfile.update({ where: { id: profile.id }, data: { referralCode: referralCodeFor(req.user!.id) } })
+    }
     return res.json(toProfile(profile))
   }),
 )
@@ -46,7 +56,7 @@ router.post(
     if (!parsed.success) return res.status(400).json(parsed.error.flatten())
     const d = parsed.data
     const profile = await prisma.clientProfile.create({
-      data: { userId: req.user!.id, photo: d.photo ?? undefined, isActive: d.is_active ?? true, language: d.language ?? 'fr' },
+      data: { userId: req.user!.id, photo: d.photo ?? undefined, isActive: d.is_active ?? true, language: d.language ?? 'fr', referralCode: referralCodeFor(req.user!.id) },
     })
     return res.status(201).json(toProfile(profile))
   }),

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Navigation, Car, Star, Users, Clock3, Route as RouteIcon, Check, MapPin, Phone, MessageCircle } from 'lucide-react'
+import { Navigation, Car, Star, Users, Clock3, Route as RouteIcon, Check, MapPin, Phone, MessageCircle, Plus, X, CalendarClock, Share2, ShieldAlert, Tag, Gift } from 'lucide-react'
 import AddressAutocomplete from './ui/AddressAutocomplete'
 import Button from './ui/Button'
 import Spinner from './ui/Spinner'
@@ -25,11 +25,15 @@ export type ActiveTrip = {
   destination: string
   dest_lat: number | null
   dest_lng: number | null
+  stops?: { label: string; lat?: number; lng?: number }[]
+  scheduled_at?: string | null
+  deposit_amount?: number | null
   created_at: string
   driver_detail: {
     id: number
     username?: string
     phone?: string
+    photo?: string | null
     vehicle: { type: string; plate_number: string; seats: number } | null
   } | null
   rating: { id: number; rating: number; comment: string | null; skipped: boolean; created_at: string } | null
@@ -198,6 +202,7 @@ type Props = {
   onSkipRating: (trip: ActiveTrip) => void
   ratingSubmitting: boolean
   driverEtaMin: number | null
+  driverRating: { average: number | null; count: number } | null
 
   // idle booking form (state owned by the parent dashboard, unchanged)
   originText: string
@@ -208,8 +213,26 @@ type Props = {
   onDestinationSelect: (r: AddressResult) => void
   myPosition: Point | null
   originPoint: Point | null
+  stops: { id: string; text: string; point: Point | null }[]
+  onAddStop: () => void
+  onRemoveStop: (id: string) => void
+  onStopTextChange: (id: string, v: string) => void
+  onStopSelect: (id: string, r: AddressResult) => void
+  maxStops: number
+  scheduleEnabled: boolean
+  onScheduleToggle: (v: boolean) => void
+  scheduledAtInput: string
+  onScheduledAtChange: (v: string) => void
+  promoCodeInput: string
+  onPromoCodeChange: (v: string) => void
+  onCheckPromoCode: () => void
+  promoChecking: boolean
+  promoResult: { valid: boolean; discount_pct?: number; detail?: string } | null
+  loyaltyAvailable: number
+  useLoyaltyReward: boolean
+  onToggleLoyaltyReward: (v: boolean) => void
   routeLoading: boolean
-  estimate: { price: number; distanceKm: number } | null
+  estimate: { price: number; distanceKm: number; priceMin?: number; priceMax?: number } | null
   route: Route | null
   submitting: boolean
   canRequest: boolean
@@ -226,6 +249,10 @@ type Props = {
   changingVehicleType: boolean
   onChangeActivePaymentMethod: (v: string) => void
   changingPaymentMethod: boolean
+  onShareTrip: () => void
+  sharingTrip: boolean
+  onSos: () => void
+  sosSubmitting: boolean
 }
 
 export default function RideStatusBar({
@@ -237,6 +264,7 @@ export default function RideStatusBar({
   onSkipRating,
   ratingSubmitting,
   driverEtaMin,
+  driverRating,
   originText,
   destinationText,
   onOriginChange,
@@ -245,6 +273,24 @@ export default function RideStatusBar({
   onDestinationSelect,
   myPosition,
   originPoint,
+  stops,
+  onAddStop,
+  onRemoveStop,
+  onStopTextChange,
+  onStopSelect,
+  maxStops,
+  scheduleEnabled,
+  onScheduleToggle,
+  scheduledAtInput,
+  onScheduledAtChange,
+  promoCodeInput,
+  onPromoCodeChange,
+  onCheckPromoCode,
+  promoChecking,
+  promoResult,
+  loyaltyAvailable,
+  useLoyaltyReward,
+  onToggleLoyaltyReward,
   routeLoading,
   estimate,
   route,
@@ -261,9 +307,17 @@ export default function RideStatusBar({
   changingVehicleType,
   onChangeActivePaymentMethod,
   changingPaymentMethod,
+  onShareTrip,
+  sharingTrip,
+  onSos,
+  sosSubmitting,
 }: Props) {
+  const [sosConfirming, setSosConfirming] = useState(false)
   const status = activeTrip?.status
   const waiting = !!activeTrip && status === 'REQUESTED'
+  const depositPreview = estimate ? Math.max(200, Math.round(estimate.price * 0.2)) : 0
+  // datetime-local's min needs local time with no timezone offset, to the minute.
+  const minScheduleValue = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)
 
   const elapsed = useElapsedSeconds(waiting ? activeTrip?.created_at : undefined)
 
@@ -363,6 +417,29 @@ export default function RideStatusBar({
             currentPosition={myPosition}
             allowMyLocation
           />
+          {stops.map((stop, i) => (
+            <div key={stop.id} className="flex items-start gap-2">
+              <div className="flex-1">
+                <AddressAutocomplete
+                  label={`Arrêt ${i + 1}`}
+                  placeholder="Déposer quelqu'un ici ?"
+                  value={stop.text}
+                  onChange={(v) => onStopTextChange(stop.id, v)}
+                  onSelect={(r) => onStopSelect(stop.id, r)}
+                  near={originPoint || myPosition || undefined}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => onRemoveStop(stop.id)}
+                className="mt-6 grid place-items-center w-8 h-8 rounded-lg bg-stone-100 dark:bg-stone-800 text-stone-400 dark:text-stone-500 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-colors shrink-0"
+                aria-label="Supprimer cet arrêt"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+
           <AddressAutocomplete
             label="Destination"
             placeholder="Où allez-vous ?"
@@ -371,6 +448,17 @@ export default function RideStatusBar({
             onSelect={onDestinationSelect}
             near={originPoint || myPosition || undefined}
           />
+
+          {stops.length < maxStops && (
+            <button
+              type="button"
+              onClick={onAddStop}
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 dark:text-brand-400 hover:text-brand-700 -mt-2"
+            >
+              <Plus size={14} /> Ajouter un arrêt
+            </button>
+          )}
+
           <p className="-mt-2 text-xs text-stone-400 dark:text-stone-500">Astuce : vous pouvez aussi cliquer directement sur la carte pour placer la destination.</p>
 
           <div>
@@ -382,6 +470,73 @@ export default function RideStatusBar({
             <div className="text-xs font-medium text-stone-500 dark:text-stone-400 mb-1.5">Méthode de paiement</div>
             <OptionPicker options={PAYMENT_OPTIONS} value={paymentMethod} onChange={onPaymentMethodChange} />
           </div>
+
+          <div className="rounded-xl border border-stone-100 dark:border-stone-800 px-4 py-3">
+            <label className="flex items-center gap-2 text-sm font-medium text-stone-700 dark:text-stone-200 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={scheduleEnabled}
+                onChange={(e) => onScheduleToggle(e.target.checked)}
+                className="rounded accent-brand-500 w-4 h-4"
+              />
+              <CalendarClock size={16} className="text-brand-600" />
+              Réserver pour plus tard
+            </label>
+            {scheduleEnabled && (
+              <div className="mt-3 space-y-2 animate-fade-in-up">
+                <input
+                  type="datetime-local"
+                  value={scheduledAtInput}
+                  min={minScheduleValue}
+                  onChange={(e) => onScheduledAtChange(e.target.value)}
+                  className="w-full text-sm rounded-lg border border-stone-200 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-200 focus:border-brand-300"
+                />
+                {estimate && (
+                  <p className="text-xs text-stone-500 dark:text-stone-400">
+                    Un acompte simulé de <span className="font-semibold text-stone-700 dark:text-stone-200">~{depositPreview.toLocaleString('fr-FR')} XOF</span> sera réglé pour confirmer la réservation.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {loyaltyAvailable > 0 && (
+            <label className="flex items-center gap-2.5 rounded-xl border border-dashed border-secondary-300 dark:border-secondary-700 bg-secondary-50 dark:bg-secondary-500/10 px-4 py-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={useLoyaltyReward}
+                onChange={(e) => onToggleLoyaltyReward(e.target.checked)}
+                className="rounded accent-secondary-500 w-4 h-4"
+              />
+              <Gift size={16} className="text-secondary-600 dark:text-secondary-400 shrink-0" />
+              <span className="text-sm text-stone-700 dark:text-stone-200">
+                Utiliser ma course gratuite <span className="text-stone-400 dark:text-stone-500">({loyaltyAvailable} disponible{loyaltyAvailable > 1 ? 's' : ''})</span>
+              </span>
+            </label>
+          )}
+
+          {!useLoyaltyReward && (
+            <div>
+              <div className="text-xs font-medium text-stone-500 dark:text-stone-400 mb-1.5">Code promo (optionnel)</div>
+              <div className="flex items-center gap-1.5">
+                <input
+                  value={promoCodeInput}
+                  onChange={(e) => onPromoCodeChange(e.target.value.toUpperCase())}
+                  placeholder="Ex: SAMA10"
+                  className="flex-1 text-sm rounded-lg border border-stone-200 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100 px-3 py-2 uppercase focus:outline-none focus:ring-2 focus:ring-brand-200 focus:border-brand-300"
+                />
+                <Button type="button" variant="outline" size="sm" loading={promoChecking} onClick={onCheckPromoCode} disabled={!promoCodeInput.trim()}>
+                  Vérifier
+                </Button>
+              </div>
+              {promoResult && (
+                <p className={`mt-1.5 text-xs flex items-center gap-1 ${promoResult.valid ? 'text-secondary-600 dark:text-secondary-400' : 'text-red-500'}`}>
+                  {promoResult.valid ? <Check size={12} /> : <X size={12} />}
+                  {promoResult.valid ? `Code valide : -${promoResult.discount_pct}%` : promoResult.detail}
+                </p>
+              )}
+            </div>
+          )}
 
           {(routeLoading || estimate) && (
             <div className="animate-fade-in-up rounded-xl bg-brand-50 dark:bg-brand-500/10 border border-brand-100 dark:border-brand-500/20 px-4 py-3 flex items-center justify-between">
@@ -401,8 +556,35 @@ export default function RideStatusBar({
                       </span>
                     )}
                   </div>
-                  <span className="font-bold text-brand-700 dark:text-brand-400">
-                    ~<AnimatedNumber value={estimate?.price ?? 0} format={(n) => n.toLocaleString('fr-FR')} /> XOF
+                  <span className="text-right">
+                    {useLoyaltyReward && estimate ? (
+                      <>
+                        <span className="block text-xs text-stone-400 dark:text-stone-500 line-through">
+                          ~{Math.round(estimate.price).toLocaleString('fr-FR')} XOF
+                        </span>
+                        <span className="block font-bold text-secondary-600 dark:text-secondary-400 flex items-center justify-end gap-1">
+                          <Gift size={13} /> Gratuite
+                        </span>
+                      </>
+                    ) : promoResult?.valid && estimate ? (
+                      <>
+                        <span className="block text-xs text-stone-400 dark:text-stone-500 line-through">
+                          ~{Math.round(estimate.price).toLocaleString('fr-FR')} XOF
+                        </span>
+                        <span className="block font-bold text-secondary-600 dark:text-secondary-400 flex items-center justify-end gap-1">
+                          <Tag size={13} /> ~{Math.round(estimate.price * (1 - (promoResult.discount_pct || 0) / 100)).toLocaleString('fr-FR')} XOF
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="block font-bold text-brand-700 dark:text-brand-400">
+                          {estimate?.priceMin != null && estimate?.priceMax != null
+                            ? `~${estimate.priceMin.toLocaleString('fr-FR')} - ${estimate.priceMax.toLocaleString('fr-FR')} XOF`
+                            : `~${(estimate?.price ?? 0).toLocaleString('fr-FR')} XOF`}
+                        </span>
+                        <span className="block text-[10px] text-brand-600/70 dark:text-brand-400/60">selon le trafic</span>
+                      </>
+                    )}
                   </span>
                 </>
               )}
@@ -410,9 +592,39 @@ export default function RideStatusBar({
           )}
 
           <Button type="submit" fullWidth size="lg" disabled={!canRequest} loading={submitting}>
-            Demander une course
+            {useLoyaltyReward ? 'Utiliser ma course gratuite' : scheduleEnabled ? 'Réserver et payer l\'acompte' : 'Demander une course'}
           </Button>
         </form>
+      </div>
+    )
+  }
+
+  // ---------- Scheduled: booked for later, not yet visible to drivers ----------
+  if (status === 'SCHEDULED') {
+    const when = activeTrip!.scheduled_at
+      ? new Date(activeTrip!.scheduled_at).toLocaleString('fr-FR', { weekday: 'long', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+      : null
+    return (
+      <div key="scheduled" className="animate-fade-in-up">
+        <h2 className="font-semibold text-stone-800 dark:text-stone-100 mb-4 flex items-center gap-2">
+          <CalendarClock size={18} className="text-brand-600" />
+          Course programmée
+        </h2>
+        <div className="rounded-xl bg-brand-50 dark:bg-brand-500/10 border border-brand-100 dark:border-brand-500/20 px-4 py-4 mb-4 animate-pop">
+          <div className="font-semibold text-stone-800 dark:text-stone-100 capitalize">{when}</div>
+          <div className="mt-1 text-sm text-stone-600 dark:text-stone-300">{activeTrip!.origin.split(',')[0]} → {activeTrip!.destination.split(',')[0]}</div>
+          {!!activeTrip!.deposit_amount && (
+            <div className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-brand-700 dark:text-brand-400 bg-white/60 dark:bg-stone-900/40 rounded-full px-2.5 py-1">
+              <Check size={12} /> Acompte réglé : {activeTrip!.deposit_amount.toLocaleString('fr-FR')} XOF
+            </div>
+          )}
+          <p className="mt-2 text-xs text-stone-500 dark:text-stone-400">
+            Un chauffeur sera recherché automatiquement à l'approche de l'heure prévue.
+          </p>
+        </div>
+        <Button variant="danger" fullWidth onClick={onCancel} loading={cancelling}>
+          Annuler la réservation
+        </Button>
       </div>
     )
   }
@@ -500,10 +712,22 @@ export default function RideStatusBar({
       )}
 
       <div className="rounded-xl bg-secondary-50 dark:bg-secondary-500/10 border border-secondary-100 dark:border-secondary-500/20 px-4 py-4 mb-4 animate-pop">
-        <div className="flex items-center justify-between">
-          <div className="font-semibold text-stone-800 dark:text-stone-100">{driver?.username || driver?.phone || 'Chauffeur en route'}</div>
-          <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 rounded-full px-2 py-1">
-            <Star size={12} className="fill-amber-500 text-amber-500" /> Nouveau chauffeur
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            {driver?.photo ? (
+              <img src={driver.photo} alt={driver.username || 'Chauffeur'} className="w-10 h-10 rounded-full object-cover shrink-0 border-2 border-white dark:border-stone-800 shadow-card" />
+            ) : (
+              <span className="grid place-items-center w-10 h-10 rounded-full bg-secondary-500 text-white font-bold uppercase text-sm shrink-0">
+                {(driver?.username || driver?.phone || '?').slice(0, 2)}
+              </span>
+            )}
+            <div className="font-semibold text-stone-800 dark:text-stone-100 truncate">{driver?.username || driver?.phone || 'Chauffeur en route'}</div>
+          </div>
+          <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 rounded-full px-2 py-1 shrink-0">
+            <Star size={12} className="fill-amber-500 text-amber-500" />
+            {driverRating?.average != null
+              ? `${driverRating.average.toFixed(1)} (${driverRating.count})`
+              : 'Nouveau chauffeur'}
           </span>
         </div>
         <div className="mt-2 flex items-center gap-2 text-sm text-stone-600 dark:text-stone-300">
@@ -511,6 +735,12 @@ export default function RideStatusBar({
           {vehicleLabel}
           {driver?.vehicle?.plate_number && <span className="text-stone-400 dark:text-stone-500">· {driver.vehicle.plate_number}</span>}
         </div>
+        {!!activeTrip!.stops?.length && (
+          <div className="mt-1.5 flex items-start gap-2 text-xs text-stone-500 dark:text-stone-400">
+            <RouteIcon size={13} className="mt-0.5 shrink-0" />
+            <span>Via {activeTrip!.stops.map((s) => s.label.split(',')[0]).join(', ')}</span>
+          </div>
+        )}
         {driver?.phone && (
           <div className="mt-3 flex items-center gap-2">
             <a
@@ -554,9 +784,57 @@ export default function RideStatusBar({
         <OptionPicker options={PAYMENT_OPTIONS} value={activeTrip!.payment_method} onChange={onChangeActivePaymentMethod} disabled={changingPaymentMethod} />
       </div>
 
+      <Button variant="outline" fullWidth icon={<Share2 size={15} />} onClick={onShareTrip} loading={sharingTrip} className="mb-2.5">
+        Partager le trajet
+      </Button>
+
       <Button variant="danger" fullWidth onClick={onCancel} loading={cancelling} disabled={status === 'STARTED'}>
         {status === 'STARTED' ? 'Course en cours' : 'Annuler la course'}
       </Button>
+
+      <button
+        type="button"
+        onClick={() => setSosConfirming(true)}
+        className="mt-3 w-full flex items-center justify-center gap-1.5 text-xs font-medium text-stone-400 dark:text-stone-500 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+      >
+        <ShieldAlert size={13} /> Urgence / SOS
+      </button>
+
+      {sosConfirming && (
+        <div className="fixed inset-0 bg-stone-900/50 flex items-center justify-center z-[1000] p-4">
+          <div className="bg-white dark:bg-stone-900 rounded-2xl shadow-floating w-full max-w-sm p-6 relative animate-fade-in-up">
+            <button
+              onClick={() => setSosConfirming(false)}
+              className="absolute right-4 top-4 text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:text-stone-300"
+              disabled={sosSubmitting}
+            >
+              <X size={18} />
+            </button>
+            <span className="grid place-items-center w-11 h-11 rounded-xl bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 mb-3">
+              <ShieldAlert size={20} />
+            </span>
+            <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-50">Déclencher l'alerte SOS ?</h3>
+            <p className="text-sm text-stone-500 dark:text-stone-400 mb-5">
+              Notre équipe sera alertée immédiatement avec votre position, et l'appel d'urgence s'ouvrira sur votre téléphone.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setSosConfirming(false)} disabled={sosSubmitting}>
+                Annuler
+              </Button>
+              <Button
+                variant="danger"
+                loading={sosSubmitting}
+                onClick={() => {
+                  onSos()
+                  setSosConfirming(false)
+                }}
+              >
+                Oui, envoyer l'alerte
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

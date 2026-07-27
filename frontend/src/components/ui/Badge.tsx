@@ -3,6 +3,7 @@ import React from 'react'
 export type TripStatus = 'REQUESTED' | 'ASSIGNED' | 'ACCEPTED' | 'ARRIVED' | 'STARTED' | 'COMPLETED' | 'CANCELLED'
 
 const statusStyles: Record<string, string> = {
+  SCHEDULED: 'bg-brand-100 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300',
   REQUESTED: 'bg-accent-300/40 text-accent-700 dark:bg-accent-400/10 dark:text-accent-300',
   ASSIGNED: 'bg-brand-100 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300',
   ACCEPTED: 'bg-brand-100 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300',
@@ -16,6 +17,7 @@ const statusStyles: Record<string, string> = {
 }
 
 const statusLabelsFr: Record<string, string> = {
+  SCHEDULED: 'Programmée',
   REQUESTED: 'Recherche...',
   ASSIGNED: 'Chauffeur assigné',
   ACCEPTED: 'Accepté',
