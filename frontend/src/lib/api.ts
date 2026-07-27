@@ -35,6 +35,10 @@ export async function getMe() {
   return api.get('/auth/me/')
 }
 
+export async function updateMe(payload: { username?: string; language?: 'fr' | 'wo' }) {
+  return api.patch('/auth/me/', payload)
+}
+
 export async function getUsers() {
   return api.get('/auth/users/')
 }
@@ -153,6 +157,14 @@ export async function cancelTrip(id: number) {
 
 export async function updateTripVehicleType(id: number, vehicle_type: string) {
   return api.post(`/trips/${id}/vehicle-type/`, { vehicle_type })
+}
+
+export async function rateTrip(id: number, rating: number, comment?: string) {
+  return api.post(`/trips/${id}/rate/`, { rating, comment })
+}
+
+export async function skipTripRating(id: number) {
+  return api.post(`/trips/${id}/skip-rating/`)
 }
 
 export async function updateTripPaymentMethod(id: number, payment_method: string) {

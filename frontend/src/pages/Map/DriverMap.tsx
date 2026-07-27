@@ -15,13 +15,38 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 })
 
-const carIcon = (color: string) =>
-  L.divIcon({
+// One color per vehicle type so passengers can tell rides apart on the map at a glance.
+const VEHICLE_MARKER_COLORS: Record<string, string> = {
+  CAR: '#f2590e',
+  SEDAN: '#f2590e',
+  SUV: '#1f9d65',
+  MINIBUS: '#de9a1f',
+  BUS: '#de9a1f',
+}
+
+const CAR_SVG_PATH =
+  'M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2'
+
+const carIcon = (vehicleType?: string) => {
+  const color = VEHICLE_MARKER_COLORS[vehicleType || ''] || '#f2590e'
+  return L.divIcon({
     className: '',
-    html: `<div style="background:${color};width:30px;height:30px;border-radius:9999px;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;color:white;font-size:15px;">🚗</div>`,
-    iconSize: [30, 30],
-    iconAnchor: [15, 15],
+    html: `
+      <div style="position:relative;width:34px;height:34px;">
+        <span class="animate-marker-pulse" style="position:absolute;inset:0;border-radius:9999px;background:${color};"></span>
+        <div style="position:relative;width:34px;height:34px;border-radius:9999px;background:${color};border:2.5px solid white;box-shadow:0 3px 10px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+            <path d="${CAR_SVG_PATH}"/>
+            <circle cx="7" cy="17" r="2"/>
+            <path d="M9 17h6"/>
+            <circle cx="17" cy="17" r="2"/>
+          </svg>
+        </div>
+      </div>`,
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
   })
+}
 
 const pinIcon = (color: string, label: string) =>
   L.divIcon({
@@ -119,7 +144,10 @@ export default function DriverMap({
 
     socket.on('message', (data: any) => {
       if (data.type === 'broadcast.location') {
-        setMarkers((m) => [...m.filter((x) => x.driver_id !== data.driver_id), { lat: data.lat, lng: data.lng, driver_id: data.driver_id }])
+        setMarkers((m) => {
+          const existing = m.find((x) => x.driver_id === data.driver_id)
+          return [...m.filter((x) => x.driver_id !== data.driver_id), { ...existing, lat: data.lat, lng: data.lng, driver_id: data.driver_id }]
+        })
       }
     })
     socket.on('connect_error', (err: any) => {
@@ -184,10 +212,18 @@ export default function DriverMap({
         )}
 
         {markers.map((m) => (
-          <Marker key={m.driver_id} position={[m.lat, m.lng]} icon={carIcon('#de9a1f')}>
+          <Marker key={m.driver_id} position={[m.lat, m.lng]} icon={carIcon(m.vehicle?.type)}>
             <Popup>
-              {m.username ? `${m.username} ` : ''}
-              {m.phone ? m.phone : `Chauffeur #${m.driver_id}`}
+              <div className="text-sm">
+                <div className="font-semibold text-stone-800">{m.username || `Chauffeur #${m.driver_id}`}</div>
+                {m.vehicle?.type && (
+                  <div className="text-stone-500">
+                    {m.vehicle.type}
+                    {m.vehicle.plate_number ? ` · ${m.vehicle.plate_number}` : ''}
+                  </div>
+                )}
+                {m.phone && <div className="text-stone-400 text-xs mt-0.5">{m.phone}</div>}
+              </div>
             </Popup>
           </Marker>
         ))}

@@ -12,6 +12,10 @@ const router = Router()
 const VEHICLE_TYPES = ['CAR', 'SEDAN', 'SUV', 'MINIBUS', 'BUS'] as const
 const PAYMENT_METHODS = ['CASH', 'ORANGE'] as const
 
+// A chauffeur may only claim a trip whose pickup point (origin) is within this radius of
+// their last known position — keeps drivers from taking rides they'd have to cross town for.
+const MAX_CLAIM_RADIUS_KM = 5
+
 function toTrip(t: any) {
   return {
     id: t.id,
@@ -43,6 +47,15 @@ function toTrip(t: any) {
     created_at: t.createdAt,
     started_at: t.startedAt,
     ended_at: t.endedAt,
+    rating: t.rating
+      ? {
+          id: t.rating.id,
+          rating: t.rating.rating,
+          comment: t.rating.comment,
+          skipped: t.rating.skipped,
+          created_at: t.rating.createdAt,
+        }
+      : null,
   }
 }
 
@@ -109,14 +122,14 @@ router.post(
       },
     })
 
-    // broadcast to drivers that a new trip is available to claim
+    // Broadcast to drivers that a new trip is available to claim. This must carry the same
+    // shape as the REST /available/ list (toTrip()) — drivers append it straight into their
+    // trips list, and a payload missing `id` (previously this only sent `trip_id`) meant
+    // clicking "Prendre" on a live-arrived request sent claim/undefined/ and crashed claiming.
     broadcastToDrivers({
+      ...toTrip(trip),
       type: 'trip.requested',
       trip_id: trip.id,
-      origin: trip.origin,
-      destination: trip.destination,
-      distance_km: trip.distanceKm,
-      price: trip.price,
     })
 
     return res.status(201).json(toTrip(trip))
@@ -132,7 +145,7 @@ router.get(
     const trips = await prisma.trip.findMany({
       where: { passengerId: req.user!.id },
       orderBy: { createdAt: 'desc' },
-      include: { driver: { include: { user: true, vehicle: true } } },
+      include: { driver: { include: { user: true, vehicle: true } }, rating: true },
     })
     return res.json(trips.map(toTrip))
   }),
@@ -159,7 +172,7 @@ router.get(
     const trips = await prisma.trip.findMany({
       orderBy: { createdAt: 'desc' },
       take: limit,
-      include: { driver: { include: { user: true, vehicle: true } }, passenger: true },
+      include: { driver: { include: { user: true, vehicle: true } }, passenger: true, rating: true },
     })
     return res.json(trips.map(toTripAdmin))
   }),
@@ -190,9 +203,9 @@ router.get(
     if (!chauffeur) return res.status(403).json({ detail: 'Not a chauffeur' })
 
     const trip = await prisma.trip.findFirst({
-      where: { driverId: chauffeur.id, status: { in: ['ASSIGNED', 'ACCEPTED', 'STARTED'] } },
+      where: { driverId: chauffeur.id, status: { in: ['ASSIGNED', 'ACCEPTED', 'ARRIVED', 'STARTED'] } },
       orderBy: { createdAt: 'desc' },
-      include: { driver: { include: { user: true, vehicle: true } } },
+      include: { driver: { include: { user: true, vehicle: true } }, rating: true },
     })
     if (!trip) return res.json(null)
     return res.json(toTrip(trip))
@@ -209,10 +222,20 @@ router.post(
     if (!chauffeur) return res.status(403).json({ detail: 'Not a chauffeur' })
 
     const pk = parseInt(req.params.pk, 10)
+    if (Number.isNaN(pk)) return res.status(400).json({ detail: 'Invalid trip id' })
     const trip = await prisma.trip.findUnique({ where: { id: pk } })
     if (!trip) return res.status(404).json({ detail: 'Not found' })
     if (trip.status !== 'REQUESTED' || trip.driverId !== null) {
       return res.status(400).json({ detail: 'Trip not claimable' })
+    }
+
+    // Only enforced when both positions are known — a driver whose location hasn't reported
+    // yet shouldn't be blocked from claiming just because of that.
+    if (chauffeur.latitude != null && chauffeur.longitude != null && trip.originLat != null && trip.originLng != null) {
+      const distanceKm = haversine(chauffeur.latitude, chauffeur.longitude, trip.originLat, trip.originLng)
+      if (distanceKm > MAX_CLAIM_RADIUS_KM) {
+        return res.status(400).json({ detail: `Cette course est hors de votre secteur (à ${distanceKm.toFixed(1)} km, max ${MAX_CLAIM_RADIUS_KM} km).` })
+      }
     }
 
     const updated = await prisma.trip.update({ where: { id: pk }, data: { driverId: chauffeur.id, status: 'ASSIGNED' } })
@@ -232,13 +255,18 @@ router.get(
   authenticate,
   asyncHandler(async (req, res) => {
     const pk = parseInt(req.params.pk, 10)
-    const trip = await prisma.trip.findUnique({ where: { id: pk }, include: { driver: { include: { user: true, vehicle: true } } } })
+    if (Number.isNaN(pk)) return res.status(400).json({ detail: 'Invalid trip id' })
+    const trip = await prisma.trip.findUnique({ where: { id: pk }, include: { driver: { include: { user: true, vehicle: true } }, rating: true } })
     if (!trip) return res.status(404).json({ detail: 'Not found' })
     return res.json(toTrip(trip))
   }),
 )
 
 async function requireOwnTripAsPassenger(req: any, res: any, pk: number) {
+  if (Number.isNaN(pk)) {
+    res.status(400).json({ detail: 'Invalid trip id' })
+    return null
+  }
   const trip = await prisma.trip.findUnique({ where: { id: pk } })
   if (!trip) {
     res.status(404).json({ detail: 'Not found' })
@@ -252,6 +280,10 @@ async function requireOwnTripAsPassenger(req: any, res: any, pk: number) {
 }
 
 async function requireOwnTrip(req: any, res: any, pk: number) {
+  if (Number.isNaN(pk)) {
+    res.status(400).json({ detail: 'Invalid trip id' })
+    return null
+  }
   const chauffeur = await prisma.chauffeur.findUnique({ where: { userId: req.user!.id } })
   if (!chauffeur) {
     res.status(400).json({ detail: 'Not a chauffeur' })
@@ -283,6 +315,25 @@ router.post(
     await prisma.trip.update({ where: { id: ctx.trip.id }, data: { status: 'ACCEPTED' } })
     broadcastToTrip(ctx.trip.id, { type: 'trip.update', status: 'ACCEPTED', trip_id: ctx.trip.id })
     return res.json({ detail: 'Trip accepted' })
+  }),
+)
+
+// ---------- POST /:pk/arrived/ ----------
+// Driver signals they've reached the pickup point — lets the passenger's screen switch from
+// "chauffeur en route" to "chauffeur arrivé" instead of guessing from the ETA alone.
+
+router.post(
+  '/:pk/arrived/',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const ctx = await requireOwnTrip(req, res, parseInt(req.params.pk, 10))
+    if (!ctx) return
+    if (!['ACCEPTED', 'ASSIGNED'].includes(ctx.trip.status)) {
+      return res.status(400).json({ detail: 'Cannot mark arrived in current state' })
+    }
+    await prisma.trip.update({ where: { id: ctx.trip.id }, data: { status: 'ARRIVED' } })
+    broadcastToTrip(ctx.trip.id, { type: 'trip.update', status: 'ARRIVED', trip_id: ctx.trip.id })
+    return res.json({ detail: 'Trip marked as arrived' })
   }),
 )
 
@@ -334,7 +385,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const ctx = await requireOwnTrip(req, res, parseInt(req.params.pk, 10))
     if (!ctx) return
-    if (!['ACCEPTED', 'ASSIGNED'].includes(ctx.trip.status)) {
+    if (!['ACCEPTED', 'ASSIGNED', 'ARRIVED'].includes(ctx.trip.status)) {
       return res.status(400).json({ detail: 'Cannot start in current state' })
     }
     await prisma.trip.update({ where: { id: ctx.trip.id }, data: { status: 'STARTED', startedAt: new Date() } })
@@ -371,7 +422,7 @@ router.post(
     const trip = await requireOwnTripAsPassenger(req, res, pk)
     if (!trip) return
 
-    if (!['REQUESTED', 'ASSIGNED', 'ACCEPTED'].includes(trip.status)) {
+    if (!['REQUESTED', 'ASSIGNED', 'ACCEPTED', 'ARRIVED'].includes(trip.status)) {
       return res.status(400).json({ detail: 'Cannot cancel in current state' })
     }
 
@@ -418,7 +469,7 @@ router.post(
     const updated = await prisma.trip.update({
       where: { id: pk },
       data: { vehicleType: parsed.data.vehicle_type, price: price ?? undefined },
-      include: { driver: { include: { user: true, vehicle: true } } },
+      include: { driver: { include: { user: true, vehicle: true } }, rating: true },
     })
     broadcastToTrip(pk, { type: 'trip.update', status: updated.status, trip_id: pk })
 
@@ -450,11 +501,108 @@ router.post(
     const updated = await prisma.trip.update({
       where: { id: pk },
       data: { paymentMethod: parsed.data.payment_method },
-      include: { driver: { include: { user: true, vehicle: true } } },
+      include: { driver: { include: { user: true, vehicle: true } }, rating: true },
     })
     broadcastToTrip(pk, { type: 'trip.update', status: updated.status, trip_id: pk })
 
     return res.json(toTrip(updated))
+  }),
+)
+
+// ---------- POST /:pk/rate/ (passenger) ----------
+
+const rateTripSchema = z.object({
+  rating: z.number().int().min(1).max(5),
+  comment: z.string().max(500).optional(),
+})
+
+router.post(
+  '/:pk/rate/',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const pk = parseInt(req.params.pk, 10)
+    const trip = await requireOwnTripAsPassenger(req, res, pk)
+    if (!trip) return
+
+    if (trip.status !== 'COMPLETED') {
+      return res.status(400).json({ detail: 'Can only rate after trip is completed' })
+    }
+
+    const existing = await prisma.tripRating.findUnique({ where: { tripId: pk } })
+    if (existing) {
+      return res.status(400).json({ detail: 'This trip has already been rated' })
+    }
+
+    const parsed = rateTripSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json(parsed.error.flatten())
+
+    if (!trip.driverId) {
+      return res.status(400).json({ detail: 'No driver assigned to this trip' })
+    }
+
+    const rating = await prisma.tripRating.create({
+      data: {
+        tripId: pk,
+        passengerId: req.user!.id,
+        driverId: trip.driverId,
+        rating: parsed.data.rating,
+        comment: parsed.data.comment ?? null,
+      },
+    })
+
+    broadcastToTrip(pk, { type: 'trip.rated', trip_id: pk, rating: rating.rating })
+
+    return res.status(201).json({
+      id: rating.id,
+      trip: rating.tripId,
+      rating: rating.rating,
+      comment: rating.comment,
+      skipped: rating.skipped,
+      created_at: rating.createdAt,
+    })
+  }),
+)
+
+// ---------- POST /:pk/skip-rating/ (passenger) ----------
+
+router.post(
+  '/:pk/skip-rating/',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const pk = parseInt(req.params.pk, 10)
+    const trip = await requireOwnTripAsPassenger(req, res, pk)
+    if (!trip) return
+
+    if (trip.status !== 'COMPLETED') {
+      return res.status(400).json({ detail: 'Can only skip rating after trip is completed' })
+    }
+
+    const existing = await prisma.tripRating.findUnique({ where: { tripId: pk } })
+    if (existing) {
+      return res.status(400).json({ detail: 'This trip has already been rated or skipped' })
+    }
+
+    if (!trip.driverId) {
+      return res.status(400).json({ detail: 'No driver assigned to this trip' })
+    }
+
+    const rating = await prisma.tripRating.create({
+      data: {
+        tripId: pk,
+        passengerId: req.user!.id,
+        driverId: trip.driverId,
+        rating: 0,
+        skipped: true,
+      },
+    })
+
+    return res.status(201).json({
+      id: rating.id,
+      trip: rating.tripId,
+      rating: rating.rating,
+      skipped: rating.skipped,
+      created_at: rating.createdAt,
+    })
   }),
 )
 

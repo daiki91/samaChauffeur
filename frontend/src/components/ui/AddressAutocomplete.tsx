@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { MapPin, LocateFixed, Loader2, AlertCircle } from 'lucide-react'
+import { MapPin, LocateFixed, Loader2, AlertCircle, Home, Briefcase, History, X } from 'lucide-react'
 import { searchAddress, reverseGeocode, type AddressResult } from '../../lib/geocode'
 import { getCurrentPosition, type LatLng } from '../../lib/useGeolocation'
+import { getFavorites, setFavorite, removeFavorite, getRecents, type FavoriteSlot } from '../../lib/favorites'
 
 type Props = {
   label?: string
@@ -31,11 +32,23 @@ export default function AddressAutocomplete({
   const [searching, setSearching] = useState(false)
   const [locating, setLocating] = useState(false)
   const [locateError, setLocateError] = useState<string | null>(null)
+  const [favorites, setFavorites] = useState(getFavorites)
+  const [recents, setRecents] = useState(getRecents)
+  // Set while the user is searching specifically to save the next pick as Home/Work.
+  const [pendingFavoriteSlot, setPendingFavoriteSlot] = useState<FavoriteSlot | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  // Prevents the search effect from re-querying (and silently reopening the dropdown ~350ms
+  // later) using the full label text that a pick/favorite/geolocation selection just wrote
+  // into the field — that text isn't something the user typed to search for.
+  const skipNextSearchRef = useRef(false)
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (skipNextSearchRef.current) {
+      skipNextSearchRef.current = false
+      return
+    }
     if (!value || value.trim().length < 3) {
       setResults([])
       return
@@ -58,16 +71,48 @@ export default function AddressAutocomplete({
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false)
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+        setPendingFavoriteSlot(null)
+      }
     }
     document.addEventListener('mousedown', onClickOutside)
     return () => document.removeEventListener('mousedown', onClickOutside)
   }, [])
 
   const pick = (r: AddressResult) => {
+    if (pendingFavoriteSlot) {
+      setFavorite(pendingFavoriteSlot, { label: r.label, lat: r.lat, lng: r.lng })
+      setFavorites(getFavorites())
+      setPendingFavoriteSlot(null)
+    }
+    skipNextSearchRef.current = true
     onSelect(r)
     setOpen(false)
     setResults([])
+  }
+
+  const pickFavoriteSlot = (slot: FavoriteSlot) => {
+    const place = favorites[slot]
+    if (place) {
+      pick(place)
+    } else {
+      // Nothing saved yet for this slot — let the user search normally, and save
+      // whatever they pick next as this favorite.
+      setPendingFavoriteSlot(slot)
+      onChange('')
+    }
+  }
+
+  const clearFavorite = (e: React.MouseEvent, slot: FavoriteSlot) => {
+    e.stopPropagation()
+    removeFavorite(slot)
+    setFavorites(getFavorites())
+  }
+
+  const FAVORITE_META: Record<FavoriteSlot, { label: string; icon: typeof Home }> = {
+    home: { label: 'Domicile', icon: Home },
+    work: { label: 'Travail', icon: Briefcase },
   }
 
   const useMyLocation = async () => {
@@ -100,10 +145,71 @@ export default function AddressAutocomplete({
           placeholder={placeholder}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          onFocus={() => results.length > 0 && setOpen(true)}
+          onFocus={() => {
+            setFavorites(getFavorites())
+            setRecents(getRecents())
+            setOpen(true)
+          }}
         />
         {searching && <Loader2 size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 animate-spin" />}
       </div>
+
+      {open && value.trim().length < 3 && (
+        <div className="absolute z-30 mt-1 w-full rounded-xl border border-stone-100 bg-white shadow-floating animate-fade-in-up overflow-hidden">
+          {(['home', 'work'] as FavoriteSlot[]).map((slot) => {
+            const meta = FAVORITE_META[slot]
+            const place = favorites[slot]
+            const Icon = meta.icon
+            return (
+              <div key={slot} className="group flex items-center border-b border-stone-50 last:border-0">
+                <button
+                  type="button"
+                  onClick={() => pickFavoriteSlot(slot)}
+                  className="flex-1 flex items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-brand-50 min-w-0"
+                >
+                  <span
+                    className={`grid place-items-center w-8 h-8 rounded-lg shrink-0 ${place ? 'bg-brand-50 text-brand-600' : 'bg-stone-50 text-stone-400'}`}
+                  >
+                    <Icon size={15} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-stone-800">{meta.label}</span>
+                    <span className="block text-xs text-stone-400 truncate">{place ? place.label : 'Ajouter une adresse'}</span>
+                  </span>
+                </button>
+                {place && (
+                  <button
+                    type="button"
+                    onClick={(e) => clearFavorite(e, slot)}
+                    className="px-2.5 self-stretch grid place-items-center text-stone-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                    aria-label={`Retirer ${meta.label}`}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            )
+          })}
+          {recents.map((r, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => pick(r)}
+              className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-brand-50 border-b border-stone-50 last:border-0"
+            >
+              <span className="grid place-items-center w-8 h-8 rounded-lg bg-stone-50 text-stone-400 shrink-0">
+                <History size={15} />
+              </span>
+              <span className="text-sm text-stone-700 truncate">{r.label}</span>
+            </button>
+          ))}
+          {pendingFavoriteSlot && (
+            <div className="px-3.5 py-2 text-xs text-brand-600 bg-brand-50/60">
+              Recherchez une adresse à enregistrer comme {FAVORITE_META[pendingFavoriteSlot].label.toLowerCase()}…
+            </div>
+          )}
+        </div>
+      )}
 
       {open && results.length > 0 && (
         <div className="absolute z-30 mt-1 w-full max-h-64 overflow-auto rounded-xl border border-stone-100 bg-white shadow-floating animate-fade-in-up">

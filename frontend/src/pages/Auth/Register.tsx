@@ -71,7 +71,7 @@ export default function Register() {
         />
 
         <div>
-          <label className="block text-sm font-medium text-stone-700 mb-1.5">Je suis...</label>
+          <label className="block text-sm font-medium text-stone-700 dark:text-stone-300 mb-1.5">Je suis...</label>
           <div className="grid grid-cols-2 gap-3">
             {[
               { value: 'CLIENT', label: 'Passager', icon: UserRound },
@@ -83,8 +83,8 @@ export default function Register() {
                 onClick={() => setForm({ ...form, role: opt.value })}
                 className={`flex flex-col items-center gap-1.5 rounded-xl border py-3 text-sm font-medium transition-colors ${
                   form.role === opt.value
-                    ? 'border-brand-500 bg-brand-50 text-brand-700'
-                    : 'border-stone-200 text-stone-500 hover:border-stone-300'
+                    ? 'border-brand-500 bg-brand-50 dark:bg-brand-500/10 text-brand-700 dark:text-brand-400'
+                    : 'border-stone-200 dark:border-stone-700 text-stone-500 dark:text-stone-400 hover:border-stone-300 dark:hover:border-stone-600'
                 }`}
               >
                 <opt.icon size={18} />
@@ -94,7 +94,7 @@ export default function Register() {
           </div>
         </div>
 
-        {error && <div className="rounded-lg bg-red-50 text-red-700 text-sm px-3 py-2">{error}</div>}
+        {error && <div className="rounded-lg bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-400 text-sm px-3 py-2">{error}</div>}
         <Button type="submit" fullWidth size="lg" loading={loading}>
           Créer mon compte
         </Button>

@@ -102,7 +102,12 @@ export function initRealtime(server: HttpServer) {
       try {
         // Sockets are ordered per-connection, so the last write here is always the most
         // recent position for this connection — no extra out-of-order handling needed.
-        await prisma.chauffeur.update({ where: { id: driverId }, data: { latitude: latN, longitude: lngN, isAvailable: true } })
+        // Availability is NOT touched here: it's owned by the explicit online/offline toggle
+        // and the claim/complete trip lifecycle. Forcing it back to true on every location
+        // ping (as the original Django consumer did) meant a driver mid-trip — whose app keeps
+        // streaming location the whole time — would flip back to "available" seconds after
+        // being claimed, reappearing to other passengers as free while actually busy.
+        await prisma.chauffeur.update({ where: { id: driverId }, data: { latitude: latN, longitude: lngN } })
       } catch {
         // unknown chauffeur id — ignore, mirrors Chauffeur.DoesNotExist handling
       }

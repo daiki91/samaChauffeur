@@ -6,10 +6,12 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { initAuth } from './lib/auth'
+import { initTheme } from './lib/theme'
 import { AuthProvider } from './context/AuthContext'
 import { ToastProvider } from './components/Toasts'
 
 initAuth()
+initTheme()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

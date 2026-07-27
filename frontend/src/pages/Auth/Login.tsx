@@ -85,7 +85,7 @@ export default function Login() {
           icon={<Lock size={16} />}
           required
         />
-        {error && <div className="rounded-lg bg-red-50 text-red-700 text-sm px-3 py-2">{error}</div>}
+        {error && <div className="rounded-lg bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-400 text-sm px-3 py-2">{error}</div>}
         <Button type="submit" fullWidth size="lg" loading={loading}>
           Se connecter
         </Button>
