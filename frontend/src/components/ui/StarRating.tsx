@@ -17,20 +17,8 @@ export default function StarRating({ value, onChange, size = 28, readOnly = fals
       {[1, 2, 3, 4, 5].map((n) => {
         const filled = n <= display
         return (
-          <button
-            key={n}
-            type="button"
-            disabled={readOnly}
-            onMouseEnter={() => !readOnly && setHovered(n)}
-            onClick={() => !readOnly && onChange?.(n)}
-            className={`transition-transform duration-150 ${readOnly ? 'cursor-default' : 'cursor-pointer hover:scale-110 active:scale-95'}`}
-            aria-label={`${n} étoile${n > 1 ? 's' : ''}`}
-          >
-            <Star
-              size={size}
-              className={`transition-colors duration-150 ${filled ? 'text-accent-500' : 'text-stone-200 dark:text-stone-700'}`}
-              fill={filled ? 'currentColor' : 'none'}
-            />
+          <button key={n} type="button" disabled={readOnly} onMouseEnter={() => !readOnly && setHovered(n)} onClick={() => !readOnly && onChange?.(n)} className={`transition-transform duration-150 ${readOnly ? 'cursor-default' : 'cursor-pointer hover:scale-110 active:scale-95'}`} aria-label={`${n} étoile${n > 1 ? 's' : ''}`}>
+            <Star size={size} className={`transition-colors duration-150 ${filled ? 'text-accent-500' : 'text-stone-200'}`} fill={filled ? 'currentColor' : 'none'} />
           </button>
         )
       })}

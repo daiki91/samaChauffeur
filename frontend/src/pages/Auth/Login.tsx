@@ -58,7 +58,7 @@ export default function Login() {
       subtitle="Connectez-vous pour réserver ou prendre le volant."
       footer={
         <>
-          Pas encore de compte ?{' '}
+          Pas encore de compte ?{''}
           <Link to="/auth/register" className="font-semibold text-brand-600">
             Créer un compte
           </Link>
@@ -66,26 +66,9 @@ export default function Login() {
       }
     >
       <form onSubmit={handleSubmit} className="space-y-4">
-        <Input
-          label="Téléphone"
-          name="phone"
-          value={form.phone}
-          onChange={handleChange}
-          placeholder="+221 77 000 00 00"
-          icon={<Phone size={16} />}
-          required
-        />
-        <Input
-          label="Mot de passe"
-          type="password"
-          name="password"
-          value={form.password}
-          onChange={handleChange}
-          placeholder="••••••••"
-          icon={<Lock size={16} />}
-          required
-        />
-        {error && <div className="rounded-lg bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-400 text-sm px-3 py-2">{error}</div>}
+        <Input label="Téléphone" name="phone" value={form.phone} onChange={handleChange} placeholder="+221 77 000 00 00" icon={<Phone size={16} />} required />
+        <Input label="Mot de passe" type="password" name="password" value={form.password} onChange={handleChange} placeholder="••••••••" icon={<Lock size={16} />} required />
+        {error && <div className="rounded-lg bg-red-50 text-red-700 text-sm px-3 py-2">{error}</div>}
         <Button type="submit" fullWidth size="lg" loading={loading}>
           Se connecter
         </Button>

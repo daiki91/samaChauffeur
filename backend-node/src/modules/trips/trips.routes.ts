@@ -7,6 +7,7 @@ import { authenticate, requireAdmin } from '../../middleware/auth'
 import { haversine } from '../../utils/haversine'
 import { estimatePrice, NoPricingRuleError, resolvePromoCode, InvalidPromoCodeError } from '../pricing/pricing.service'
 import { broadcastToDrivers, broadcastToTrip } from '../../realtime/socket'
+import { getOrCreateProfile, recordDistance, getRewardsStatus } from '../clients/rewards.service'
 
 const router = Router()
 
@@ -89,7 +90,6 @@ const createTripSchema = z
     distance_km: z.number().positive().optional(),
     scheduled_at: z.string().datetime().optional(),
     promo_code: z.string().optional(),
-    use_loyalty_reward: z.boolean().optional(),
   })
   .refine((v) => (v.origin_lat == null) === (v.origin_lng == null), {
     message: 'Both origin_lat and origin_lng must be provided together',
@@ -103,23 +103,6 @@ const createTripSchema = z
 // no driver yet at booking time to validate it against.
 const DEPOSIT_RATE = 0.2
 const MIN_DEPOSIT_XOF = 200
-
-// Programme de fidélité: one free ride earned per LOYALTY_THRESHOLD completed trips.
-// Available rides are derived (never stored) so they always reflect the live trip count.
-export const LOYALTY_THRESHOLD = 5
-
-export async function getLoyaltyStatus(userId: number) {
-  const profile = await prisma.clientProfile.findUnique({ where: { userId } })
-  const completedTrips = await prisma.trip.count({ where: { passengerId: userId, status: 'COMPLETED' } })
-  const redeemed = profile?.loyaltyRedeemed ?? 0
-  const earned = Math.floor(completedTrips / LOYALTY_THRESHOLD)
-  return {
-    completed_trips: completedTrips,
-    threshold: LOYALTY_THRESHOLD,
-    progress: completedTrips % LOYALTY_THRESHOLD,
-    available: Math.max(0, earned - redeemed),
-  }
-}
 
 router.post(
   '/create/',
@@ -159,16 +142,24 @@ router.post(
 
     let discountAmount: number | null = null
     let appliedPromo: Awaited<ReturnType<typeof resolvePromoCode>> | null = null
-    let usedLoyaltyReward = false
+    // Two entirely independent auto-applied discounts — a distance-progression gift
+    // (rewards.service.ts) has nothing to do with a saved promo code (clients.routes.ts POST
+    // /promo-code/); at most one is consumed per trip, gift taking priority since it's tied to
+    // a specific reward moment rather than a code the client can reuse whenever they like.
+    let consumedDiscount: { pct: number; source: 'GIFT' | 'PROMO'; promoCode: string | null; promoId: number | null } | null = null
 
-    if (data.use_loyalty_reward) {
-      if (price == null) return res.status(400).json({ detail: 'A price estimate is required to redeem a free ride' })
-      const loyalty = await getLoyaltyStatus(req.user!.id)
-      if (loyalty.available <= 0) return res.status(400).json({ detail: 'Aucune course gratuite disponible' })
-      discountAmount = price
-      price = 0
-      usedLoyaltyReward = true
+    const profile = await getOrCreateProfile(req.user!.id)
+    if (profile.pendingGiftDiscountPct != null && price != null) {
+      discountAmount = Math.round(price * (profile.pendingGiftDiscountPct / 100))
+      price = price - discountAmount
+      consumedDiscount = { pct: profile.pendingGiftDiscountPct, source: 'GIFT', promoCode: null, promoId: null }
+    } else if (profile.pendingPromoDiscountPct != null && price != null) {
+      discountAmount = Math.round(price * (profile.pendingPromoDiscountPct / 100))
+      price = price - discountAmount
+      consumedDiscount = { pct: profile.pendingPromoDiscountPct, source: 'PROMO', promoCode: profile.pendingPromoCode, promoId: profile.pendingPromoId }
     } else if (data.promo_code) {
+      // Legacy path kept for backward compatibility — a code passed directly in the
+      // request instead of pre-saved on the profile.
       if (price == null) return res.status(400).json({ detail: 'A price estimate is required to apply a promo code' })
       try {
         appliedPromo = await resolvePromoCode(data.promo_code, req.user!.id)
@@ -200,15 +191,25 @@ router.post(
         status: scheduledAt ? 'SCHEDULED' : undefined,
         scheduledAt: scheduledAt ?? undefined,
         depositAmount: depositAmount ?? undefined,
-        promoCode: usedLoyaltyReward ? 'LOYALTY_FREE' : appliedPromo ? data.promo_code!.trim().toUpperCase() : undefined,
+        promoCode: consumedDiscount
+          ? consumedDiscount.promoCode ?? 'GIFT_REWARD'
+          : appliedPromo
+            ? data.promo_code!.trim().toUpperCase()
+            : undefined,
         discountAmount: discountAmount ?? undefined,
       },
     })
 
-    if (usedLoyaltyReward) {
-      let profile = await prisma.clientProfile.findUnique({ where: { userId: req.user!.id } })
-      if (!profile) profile = await prisma.clientProfile.create({ data: { userId: req.user!.id } })
-      await prisma.clientProfile.update({ where: { id: profile.id }, data: { loyaltyRedeemed: { increment: 1 } } })
+    if (consumedDiscount?.source === 'GIFT') {
+      await prisma.clientProfile.update({ where: { userId: req.user!.id }, data: { pendingGiftDiscountPct: null } })
+    } else if (consumedDiscount?.source === 'PROMO') {
+      await prisma.clientProfile.update({
+        where: { userId: req.user!.id },
+        data: { pendingPromoCode: null, pendingPromoDiscountPct: null, pendingPromoId: null },
+      })
+      if (consumedDiscount.promoId) {
+        await prisma.promoCode.update({ where: { id: consumedDiscount.promoId }, data: { usedCount: { increment: 1 } } })
+      }
     } else if (appliedPromo?.kind === 'PROMO' && appliedPromo.promo) {
       await prisma.promoCode.update({ where: { id: appliedPromo.promo.id }, data: { usedCount: { increment: 1 } } })
     }
@@ -216,8 +217,6 @@ router.post(
     if (scheduledAt) {
       // Simulated deposit — no real payment gateway, captured as COMPLETED immediately since
       // there's no driver yet at booking time to validate it against (see validate/ below).
-      let profile = await prisma.clientProfile.findUnique({ where: { userId: req.user!.id } })
-      if (!profile) profile = await prisma.clientProfile.create({ data: { userId: req.user!.id } })
       await prisma.transaction.create({
         data: {
           clientId: profile.id,
@@ -244,13 +243,13 @@ router.post(
   }),
 )
 
-// ---------- GET /loyalty/ ----------
+// ---------- GET /rewards/ (cadeaux basés sur les km parcourus) ----------
 
 router.get(
-  '/loyalty/',
+  '/rewards/',
   authenticate,
   asyncHandler(async (req, res) => {
-    const status = await getLoyaltyStatus(req.user!.id)
+    const status = await getRewardsStatus(req.user!.id)
     return res.json(status)
   }),
 )
@@ -526,7 +525,15 @@ router.post(
     }
     await prisma.trip.update({ where: { id: ctx.trip.id }, data: { status: 'COMPLETED', endedAt: new Date() } })
     await prisma.chauffeur.update({ where: { id: ctx.chauffeur.id }, data: { isAvailable: true } })
-    broadcastToTrip(ctx.trip.id, { type: 'trip.update', status: 'COMPLETED', trip_id: ctx.trip.id })
+
+    // Feeds the passenger's distance-progression gifts (rewards.service.ts) — included inline
+    // in the broadcast so the passenger's checkpoint-celebration UI doesn't need a second call.
+    let checkpoints: { km: number; discount_pct: number | null }[] = []
+    if (ctx.trip.distanceKm != null) {
+      checkpoints = await recordDistance(ctx.trip.passengerId, ctx.trip.distanceKm)
+    }
+
+    broadcastToTrip(ctx.trip.id, { type: 'trip.update', status: 'COMPLETED', trip_id: ctx.trip.id, checkpoints })
     return res.json({ detail: 'Trip completed' })
   }),
 )
