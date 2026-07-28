@@ -1,6 +1,10 @@
 import { PrismaClient } from '@prisma/client'
+import bcrypt from 'bcryptjs'
 
 const prisma = new PrismaClient()
+
+// Default admin account — can create other admins from /admin/users via POST /auth/users/.
+const DEFAULT_ADMIN = { username: 'admin', phone: '770001122', password: 'passer123' }
 
 async function main() {
   // Default pricing rules so /api/pricing/estimate/ and trip creation work out of the box.
@@ -19,6 +23,22 @@ async function main() {
       await prisma.pricingRule.create({ data: { ...r, region: null, active: true } })
       console.log(`Created pricing rule: ${r.vehicleType}/${r.mode} = ${r.pricePerKm} XOF/km`)
     }
+  }
+
+  // Default admin — idempotent (checked by phone). Can add other admins via the admin UI.
+  const existingAdmin = await prisma.user.findUnique({ where: { phone: DEFAULT_ADMIN.phone } })
+  if (!existingAdmin) {
+    const hashed = await bcrypt.hash(DEFAULT_ADMIN.password, 10)
+    await prisma.user.create({
+      data: {
+        username: DEFAULT_ADMIN.username,
+        phone: DEFAULT_ADMIN.phone,
+        password: hashed,
+        role: 'ADMIN',
+        phoneVerified: true,
+      },
+    })
+    console.log(`Created default admin: ${DEFAULT_ADMIN.phone}`)
   }
 }
 

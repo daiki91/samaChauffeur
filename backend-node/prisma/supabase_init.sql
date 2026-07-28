@@ -48,19 +48,27 @@ exception when duplicate_object then null; end $$;
 -- ---------- accounts ----------
 
 create table if not exists "users" (
-  id             serial primary key,
-  username       text not null unique,
-  phone          text not null unique,
-  password       text not null,
-  role           "Role" not null default 'CLIENT',
-  language       "Language" not null default 'fr',
-  phone_verified boolean not null default false,
-  is_staff       boolean not null default false,
-  is_active      boolean not null default true,
-  date_joined    timestamp(3) not null default now(),
-  last_seen_at   timestamp(3)
+  id              serial primary key,
+  username        text not null unique,
+  phone           text not null unique,
+  password        text not null,
+  role            "Role" not null default 'CLIENT',
+  language        "Language" not null default 'fr',
+  phone_verified  boolean not null default false,
+  is_staff        boolean not null default false,
+  is_active       boolean not null default true,
+  date_joined     timestamp(3) not null default now(),
+  last_seen_at    timestamp(3),
+  last_latitude   double precision,
+  last_longitude  double precision,
+  last_location_at timestamp(3)
 );
 alter table "users" add column if not exists "last_seen_at" timestamp(3);
+-- Last known device position (client or chauffeur) — see presence.ts / socket.ts
+-- 'location.update' handler and GET /api/auth/users/locations/ (admin map).
+alter table "users" add column if not exists "last_latitude" double precision;
+alter table "users" add column if not exists "last_longitude" double precision;
+alter table "users" add column if not exists "last_location_at" timestamp(3);
 
 create table if not exists "refresh_tokens" (
   id         serial primary key,
@@ -324,6 +332,16 @@ where not exists (select 1 from "pricing_rules" where vehicle_type = 'MINIBUS' a
 insert into "pricing_rules" (vehicle_type, mode, region, price_per_km, active)
 select 'BUS', 'BUS', null, 50, true
 where not exists (select 1 from "pricing_rules" where vehicle_type = 'BUS' and mode = 'BUS' and region is null);
+
+-- ============================================================================
+-- Compte administrateur par défaut
+-- Téléphone 770001122 / mot de passe passer123 (hash bcrypt précalculé, cost 10).
+-- Peut créer d'autres admins depuis /admin/users (POST /api/auth/users/).
+-- ============================================================================
+
+insert into "users" (username, phone, password, role, phone_verified)
+select 'admin', '770001122', '$2b$10$0dj1nrT9HZnc2JGHkpcCxes7NRoFMtCmKOtagRKPENjLiq961nqlm', 'ADMIN', true
+where not exists (select 1 from "users" where phone = '770001122');
 
 -- ============================================================================
 -- Fin — vérification rapide

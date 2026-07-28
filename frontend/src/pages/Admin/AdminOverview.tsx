@@ -1,12 +1,24 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { getUsers, getAdminChauffeurs, getAdminVehicles, getAdminTrips, verifyChauffeur, rejectChauffeur, getAdminSosAlerts, resolveSosAlert, getAdminPayouts, updatePayoutStatus } from '../../lib/api'
+import {
+  getUsers,
+  getAdminChauffeurs,
+  getAdminVehicles,
+  getAdminTrips,
+  updateAdminChauffeur,
+  deleteAdminChauffeur,
+  verifyChauffeur,
+  rejectChauffeur,
+  getAdminSosAlerts,
+  resolveSosAlert, getAdminPayouts, updatePayoutStatus,
+} from '../../lib/api'
 import Card from '../../components/ui/Card'
 import Badge from '../../components/ui/Badge'
 import Spinner from '../../components/ui/Spinner'
 import Button from '../../components/ui/Button'
 import MiniBarChart from '../../components/admin/MiniBarChart'
 import { useToasts } from '../../components/Toasts'
-import { Users, Car, Truck, Route as RouteIcon, ShieldCheck, Activity, X, Check, Ban, ShieldAlert, MapPin, FileText, Wallet } from 'lucide-react'
+import { Users, Car, Truck, Route as RouteIcon, ShieldCheck, Ban, Play, Trash2, Activity, X, Check, ShieldAlert, MapPin, FileText, Wallet } from 'lucide-react'
+import AdminNav from '../../components/admin/AdminNav'
 
 type AdminUser = { id: number; username: string; phone: string; role: string; phone_verified: boolean }
 type AdminChauffeur = {
@@ -106,6 +118,8 @@ export default function AdminOverview() {
   const [trips, setTrips] = useState<AdminTrip[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('clients')
+  const [chauffeurActionId, setChauffeurActionId] = useState<number | null>(null)
+  const [chauffeurActionError, setChauffeurActionError] = useState<string | null>(null)
   const [reviewing, setReviewing] = useState<AdminChauffeur | null>(null)
   const [acting, setActing] = useState<'accept' | 'reject' | null>(null)
   const [sosAlerts, setSosAlerts] = useState<SosAlert[]>([])
@@ -215,6 +229,46 @@ export default function AdminOverview() {
     [trips],
   )
 
+  async function handleToggleAvailable(c: AdminChauffeur) {
+    setChauffeurActionId(c.id)
+    setChauffeurActionError(null)
+    try {
+      const res = await updateAdminChauffeur(c.id, { is_available: !c.is_available })
+      setChauffeurs((prev) => prev.map((x) => (x.id === c.id ? { ...x, ...res.data } : x)))
+    } catch (e: any) {
+      setChauffeurActionError(e?.response?.data?.detail || 'Action impossible.')
+    } finally {
+      setChauffeurActionId(null)
+    }
+  }
+
+  async function handleAssignVehicle(c: AdminChauffeur, vehicleId: string) {
+    setChauffeurActionId(c.id)
+    setChauffeurActionError(null)
+    try {
+      const res = await updateAdminChauffeur(c.id, { vehicle: vehicleId ? Number(vehicleId) : null })
+      setChauffeurs((prev) => prev.map((x) => (x.id === c.id ? { ...x, ...res.data } : x)))
+    } catch (e: any) {
+      setChauffeurActionError(e?.response?.data?.detail || 'Action impossible.')
+    } finally {
+      setChauffeurActionId(null)
+    }
+  }
+
+  async function handleDeleteChauffeur(c: AdminChauffeur) {
+    if (!window.confirm(`Retirer le statut chauffeur de ${c.username || `#${c.user}`} ? Le compte redevient un compte passager.`)) return
+    setChauffeurActionId(c.id)
+    setChauffeurActionError(null)
+    try {
+      await deleteAdminChauffeur(c.id)
+      setChauffeurs((prev) => prev.filter((x) => x.id !== c.id))
+    } catch (e: any) {
+      setChauffeurActionError(e?.response?.data?.detail || 'Suppression impossible.')
+    } finally {
+      setChauffeurActionId(null)
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-[60vh] grid place-items-center">
@@ -255,6 +309,7 @@ export default function AdminOverview() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+      <AdminNav />
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-stone-900">Vue d'ensemble</h1>
         <p className="text-stone-500 text-sm">Suivi global de la plateforme : clients, chauffeurs, véhicules et courses.</p>
@@ -398,60 +453,102 @@ export default function AdminOverview() {
           )}
 
           {tab === 'chauffeurs' && (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-stone-400">
-                  <th className="px-5 py-3 font-medium">Chauffeur</th>
-                  <th className="px-5 py-3 font-medium">Téléphone</th>
-                  <th className="px-5 py-3 font-medium">Véhicule</th>
-                  <th className="px-5 py-3 font-medium">Statut</th>
-                  <th className="px-5 py-3 font-medium">En ligne</th>
-                  <th className="px-5 py-3 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100">
-                {chauffeurs.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="text-center text-stone-400 py-8">Aucun chauffeur.</td>
+            <>
+              {chauffeurActionError && (
+                <div className="mx-5 mt-3 rounded-lg bg-red-50 text-red-700 text-sm px-3 py-2">{chauffeurActionError}</div>
+              )}
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-wide text-stone-400">
+                    <th className="px-5 py-3 font-medium">Chauffeur</th>
+                    <th className="px-5 py-3 font-medium">Téléphone</th>
+                    <th className="px-5 py-3 font-medium">Véhicule</th>
+                    <th className="px-5 py-3 font-medium">Statut</th>
+                    <th className="px-5 py-3 font-medium">En ligne</th>
+                    <th className="px-5 py-3 font-medium">Actions</th>
                   </tr>
-                )}
-                {chauffeurs.map((c) => (
-                  <tr key={c.id}>
-                    <td className="px-5 py-3 font-medium text-stone-800">{c.username || `#${c.user}`}</td>
-                    <td className="px-5 py-3 text-stone-500">{c.phone || '—'}</td>
-                    <td className="px-5 py-3 text-stone-600">
-                      {c.vehicle ? `${VEHICLE_LABELS[c.vehicle.type] || c.vehicle.type} · ${c.vehicle.plate_number}` : '—'}
-                    </td>
-                    <td className="px-5 py-3">
-                      {c.is_verified ? (
-                        <span className="text-secondary-700 font-medium">Vérifié</span>
-                      ) : (
-                        <span className="text-accent-700 font-medium">En attente</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3">
-                      {c.is_online ? (
-                        <span className="flex items-center gap-1.5 text-secondary-700 font-medium">
-                          <span className="live-dot !w-2 !h-2" />
-                          En ligne
-                        </span>
-                      ) : (
-                        <span className="text-stone-400">Hors ligne</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3">
-                      {!c.is_verified ? (
-                        <Button size="sm" variant="outline" onClick={() => setReviewing(c)}>
-                          Vérifier
-                        </Button>
-                      ) : (
-                        <span className="text-stone-300">—</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-stone-100">
+                  {chauffeurs.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="text-center text-stone-400 py-8">Aucun chauffeur.</td>
+                    </tr>
+                  )}
+                  {chauffeurs.map((c) => {
+                    const busy = chauffeurActionId === c.id
+                    return (
+                      <tr key={c.id}>
+                        <td className="px-5 py-3 font-medium text-stone-800">{c.username || `#${c.user}`}</td>
+                        <td className="px-5 py-3 text-stone-500">{c.phone || '—'}</td>
+                        <td className="px-5 py-3 text-stone-600">
+                          <select
+                            value={c.vehicle?.id ?? ''}
+                            disabled={busy}
+                            onChange={(e) => handleAssignVehicle(c, e.target.value)}
+                            className="rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-xs text-stone-700 outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400 disabled:opacity-50"
+                          >
+                            <option value="">Aucun véhicule</option>
+                            {vehicles.map((v) => (
+                              <option key={v.id} value={v.id}>
+                                {VEHICLE_LABELS[v.type] || v.type} · {v.plate_number}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-5 py-3">
+                          <div className="flex flex-col gap-1">
+                            {c.is_verified ? (
+                              <span className="text-secondary-700 font-medium">Vérifié</span>
+                            ) : (
+                              <span className="text-accent-700 font-medium">En attente</span>
+                            )}
+                            {!c.is_available && <span className="text-red-600 text-xs font-medium">Suspendu</span>}
+                          </div>
+                        </td>
+                        <td className="px-5 py-3">
+                          {c.is_online ? (
+                            <span className="flex items-center gap-1.5 text-secondary-700 font-medium">
+                              <span className="live-dot !w-2 !h-2" />
+                              En ligne
+                            </span>
+                          ) : (
+                            <span className="text-stone-400">Hors ligne</span>
+                          )}
+                        </td>
+                        <td className="px-5 py-3">
+                          {!c.is_verified ? (
+                            <Button size="sm" variant="outline" disabled={busy} onClick={() => setReviewing(c)}>
+                              Examiner
+                            </Button>
+                          ) : (
+                            <div className="flex items-center gap-1.5">
+                              <Button
+                                size="sm"
+                                variant={c.is_available ? 'outline' : 'secondary'}
+                                disabled={busy}
+                                onClick={() => handleToggleAvailable(c)}
+                                title={c.is_available ? 'Suspendre ce chauffeur' : 'Réactiver ce chauffeur'}
+                              >
+                                {c.is_available ? <Ban size={14} /> : <Play size={14} />}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="danger"
+                                disabled={busy}
+                                onClick={() => handleDeleteChauffeur(c)}
+                                title="Retirer le statut chauffeur"
+                              >
+                                <Trash2 size={14} />
+                              </Button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </>
           )}
 
           {tab === 'vehicules' && (
