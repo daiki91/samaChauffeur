@@ -22,6 +22,7 @@ function toChauffeur(c: any) {
     vehicle: toVehicle(c.vehicle),
     is_verified: c.isVerified,
     is_available: c.isAvailable,
+    photo: c.photo,
   }
 }
 
@@ -48,6 +49,7 @@ function toChauffeurAvailable(c: any) {
     is_available: c.isAvailable,
     latitude: c.latitude,
     longitude: c.longitude,
+    photo: c.photo,
   }
 }
 
@@ -240,6 +242,30 @@ router.get(
   }),
 )
 
+// ---------- GET /:id/rating-summary/ ----------
+// Average rating + review count for a chauffeur — shown to the passenger once a driver is
+// found, before the ride starts, instead of only after the fact.
+
+router.get(
+  '/:id/rating-summary/',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10)
+    if (Number.isNaN(id)) return res.status(400).json({ detail: 'Invalid chauffeur id' })
+
+    const agg = await prisma.tripRating.aggregate({
+      where: { driverId: id, skipped: false },
+      _avg: { rating: true },
+      _count: { rating: true },
+    })
+
+    return res.json({
+      average: agg._avg.rating != null ? Math.round(agg._avg.rating * 10) / 10 : null,
+      count: agg._count.rating,
+    })
+  }),
+)
+
 // ---------- POST /location/ ----------
 
 const locationSchema = z.object({
@@ -283,6 +309,45 @@ router.post(
     const updated = await prisma.chauffeur.update({
       where: { id: chauffeur.id },
       data: { isAvailable: parsed.data.is_available },
+      include: { vehicle: true },
+    })
+    return res.json(toChauffeur(updated))
+  }),
+)
+
+// ---------- GET /me/ (chauffeur — own profile) ----------
+
+router.get(
+  '/me/',
+  authenticate,
+  requireChauffeur,
+  asyncHandler(async (req, res) => {
+    const chauffeur = await prisma.chauffeur.findUnique({ where: { userId: req.user!.id }, include: { vehicle: true } })
+    if (!chauffeur) return res.status(404).json({ detail: 'No chauffeur profile' })
+    return res.json(toChauffeur(chauffeur))
+  }),
+)
+
+// ---------- POST /photo/ (chauffeur — own profile photo) ----------
+
+const photoSchema = z.object({
+  photo: z.string().min(1).nullable(),
+})
+
+router.post(
+  '/photo/',
+  authenticate,
+  requireChauffeur,
+  asyncHandler(async (req, res) => {
+    const parsed = photoSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json(parsed.error.flatten())
+
+    const chauffeur = await prisma.chauffeur.findUnique({ where: { userId: req.user!.id } })
+    if (!chauffeur) return res.status(400).json({ detail: 'No chauffeur profile' })
+
+    const updated = await prisma.chauffeur.update({
+      where: { id: chauffeur.id },
+      data: { photo: parsed.data.photo },
       include: { vehicle: true },
     })
     return res.json(toChauffeur(updated))

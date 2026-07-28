@@ -9,17 +9,7 @@ const METHODS = [
   { value: 'WAVE', label: 'Wave', icon: Smartphone },
 ]
 
-export default function PaymentModal({
-  visible,
-  trip,
-  onClose,
-  onConfirm,
-}: {
-  visible: boolean
-  trip?: any
-  onClose: () => void
-  onConfirm: (amount: number, method: string) => Promise<void>
-}) {
+export default function PaymentModal({ visible, trip, onClose, onConfirm }: { visible: boolean; trip?: any; onClose: () => void; onConfirm: (amount: number, method: string) => Promise<void> }) {
   const [amount, setAmount] = useState<number>(0)
   const [method, setMethod] = useState<string>('CASH')
   const [loading, setLoading] = useState(false)
@@ -42,9 +32,9 @@ export default function PaymentModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-stone-900/50 flex items-center justify-center z-[1000] p-4">
-      <div className="bg-white rounded-2xl shadow-floating w-full max-w-sm p-6 relative animate-fade-in-up">
-        <button onClick={onClose} className="absolute right-4 top-4 text-stone-400 hover:text-stone-600">
+    <div className="fixed inset-0 bg-stone-900/50 flex items-end sm:items-center justify-center z-[1000] p-0 sm:p-4">
+      <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-floating w-full max-w-sm p-6 relative animate-fade-in-up">
+        <button onClick={onClose} className="absolute right-4 top-4 text-stone-400 hover:text-stone-600 transition-colors">
           <X size={18} />
         </button>
         <span className="grid place-items-center w-11 h-11 rounded-xl bg-secondary-50 text-secondary-600 mb-3">
@@ -61,14 +51,7 @@ export default function PaymentModal({
             <label className="block text-sm font-medium text-stone-700 mb-1.5">Méthode</label>
             <div className="grid grid-cols-3 gap-2">
               {METHODS.map((m) => (
-                <button
-                  key={m.value}
-                  type="button"
-                  onClick={() => setMethod(m.value)}
-                  className={`flex flex-col items-center gap-1 rounded-xl border py-2.5 text-[11px] font-medium ${
-                    method === m.value ? 'border-secondary-500 bg-secondary-50 text-secondary-700' : 'border-stone-200 text-stone-500'
-                  }`}
-                >
+                <button key={m.value} type="button" onClick={() => setMethod(m.value)} className={`flex flex-col items-center gap-1 rounded-xl border py-2.5 text-[11px] font-medium transition-all duration-200 active:scale-95 ${method === m.value ? 'border-secondary-500 bg-secondary-50 text-secondary-700 scale-105 shadow-card' : 'border-stone-200 text-stone-500 hover:border-stone-300 hover:scale-105'}`}>
                   <m.icon size={16} />
                   {m.label}
                 </button>

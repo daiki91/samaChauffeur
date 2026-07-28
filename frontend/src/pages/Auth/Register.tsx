@@ -24,11 +24,7 @@ export default function Register() {
       navigate('/auth/login', { state: { phone: form.phone } })
     } catch (err: any) {
       const data = err?.response?.data
-      setError(
-        typeof data === 'string'
-          ? data
-          : data?.detail || (Object.values(data?.fieldErrors || {})[0] as any)?.[0] || 'Erreur lors de la création du compte',
-      )
+      setError(typeof data === 'string' ? data : data?.detail || (Object.values(data?.fieldErrors || {})[0] as any)?.[0] || 'Erreur lors de la création du compte')
     } finally {
       setLoading(false)
     }
@@ -40,7 +36,7 @@ export default function Register() {
       subtitle="Rejoignez samaChauffeur en moins d'une minute."
       footer={
         <>
-          Déjà inscrit ?{' '}
+          Déjà inscrit ?{''}
           <Link to="/auth/login" className="font-semibold text-brand-600">
             Se connecter
           </Link>
@@ -49,26 +45,8 @@ export default function Register() {
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input label="Nom d'utilisateur" name="username" value={form.username} onChange={handleChange} icon={<User size={16} />} required />
-        <Input
-          label="Téléphone"
-          name="phone"
-          value={form.phone}
-          onChange={handleChange}
-          placeholder="+221 77 000 00 00"
-          icon={<Phone size={16} />}
-          required
-        />
-        <Input
-          label="Mot de passe"
-          type="password"
-          name="password"
-          value={form.password}
-          onChange={handleChange}
-          placeholder="Au moins 6 caractères"
-          icon={<Lock size={16} />}
-          minLength={6}
-          required
-        />
+        <Input label="Téléphone" name="phone" value={form.phone} onChange={handleChange} placeholder="+221 77 000 00 00" icon={<Phone size={16} />} required />
+        <Input label="Mot de passe" type="password" name="password" value={form.password} onChange={handleChange} placeholder="Au moins 6 caractères" icon={<Lock size={16} />} minLength={6} required />
 
         <div>
           <label className="block text-sm font-medium text-stone-700 mb-1.5">Je suis...</label>
@@ -77,16 +55,7 @@ export default function Register() {
               { value: 'CLIENT', label: 'Passager', icon: UserRound },
               { value: 'CHAUFFEUR', label: 'Chauffeur', icon: Car },
             ].map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setForm({ ...form, role: opt.value })}
-                className={`flex flex-col items-center gap-1.5 rounded-xl border py-3 text-sm font-medium transition-colors ${
-                  form.role === opt.value
-                    ? 'border-brand-500 bg-brand-50 text-brand-700'
-                    : 'border-stone-200 text-stone-500 hover:border-stone-300'
-                }`}
-              >
+              <button key={opt.value} type="button" onClick={() => setForm({ ...form, role: opt.value })} className={`flex flex-col items-center gap-1.5 rounded-xl border py-3 text-sm font-medium transition-colors ${form.role === opt.value ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-stone-200 text-stone-500 hover:border-stone-300'}`}>
                 <opt.icon size={18} />
                 {opt.label}
               </button>

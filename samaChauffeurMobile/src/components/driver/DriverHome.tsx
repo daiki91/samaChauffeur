@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import type { Socket } from 'socket.io-client';
@@ -11,8 +11,13 @@ import { useAuth } from '@/context/AuthContext';
 import { connectDriverSocket } from '@/lib/socket';
 import { startBackgroundLocationTracking, stopBackgroundLocationTracking, setBackgroundLocationSocket } from '@/lib/backgroundLocation';
 import { getAvailableTrips, claimTrip, setChauffeurAvailability, updateLocation } from '@/lib/api';
+import { haversineKm } from '@/lib/geo';
 import { colors, fonts, fontSizes, spacing } from '@/constants/theme';
 import type { Trip } from '@/types';
+
+// Must match MAX_CLAIM_RADIUS_KM on the backend (backend-node/src/modules/trips/trips.routes.ts) —
+// a claim outside this radius is rejected server-side regardless, this just avoids a round-trip.
+const MAX_CLAIM_RADIUS_KM = 5;
 
 export default function DriverHome() {
   const { chauffeur, updateChauffeur } = useAuth();
@@ -20,6 +25,7 @@ export default function DriverHome() {
   const [online, setOnline] = useState(!!chauffeur?.is_available);
   const [toggling, setToggling] = useState(false);
   const [trips, setTrips] = useState<Trip[]>([]);
+  const [claimingId, setClaimingId] = useState<number | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const lastSent = useRef(0);
   const lastPosition = useRef<{ lat: number; lng: number } | null>(null);
@@ -103,14 +109,28 @@ export default function DriverHome() {
   };
 
   const handleClaim = async (id: number) => {
+    setClaimingId(id);
     try {
       await claimTrip(id);
       setTrips((t) => t.filter((x) => x.id !== id));
       router.push({ pathname: '/(app)/trip/[id]', params: { id: String(id) } });
-    } catch {
-      // ignore
+    } catch (err: any) {
+      Alert.alert('Course non prise', err?.response?.data?.detail || "Impossible d'accepter cette course pour le moment.");
+    } finally {
+      setClaimingId(null);
     }
   };
+
+  // Sort by distance from the driver (closest first); never hide a trip outright — but the
+  // server rejects claims beyond MAX_CLAIM_RADIUS_KM, so grey those out here too.
+  const sortedTrips = useMemo(() => {
+    if (!position) return trips;
+    return [...trips].sort((a, b) => {
+      const da = a.origin_lat != null && a.origin_lng != null ? haversineKm(position, { lat: a.origin_lat, lng: a.origin_lng }) : Infinity;
+      const db = b.origin_lat != null && b.origin_lng != null ? haversineKm(position, { lat: b.origin_lat, lng: b.origin_lng }) : Infinity;
+      return da - db;
+    });
+  }, [trips, position]);
 
   if (!chauffeur?.is_verified) {
     return (
@@ -145,23 +165,32 @@ export default function DriverHome() {
         )}
       </Card>
 
-      <Text style={styles.sectionTitle}>Courses disponibles</Text>
-      {trips.length === 0 && <Text style={styles.emptyText}>Aucune course en attente pour l&apos;instant.</Text>}
-      {trips.map((t) => (
-        <Card key={t.id} style={styles.tripRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.tripRoute} numberOfLines={1}>
-              {t.origin} → {t.destination}
-            </Text>
-            <Text style={styles.tripMeta}>
-              {t.distance_km ? `${Number(t.distance_km).toFixed(1)} km` : '—'} · {t.price ? `${t.price} XOF` : 'Prix non estimé'}
-            </Text>
-          </View>
-          <Button size="sm" onPress={() => handleClaim(t.id)}>
-            Prendre
-          </Button>
-        </Card>
-      ))}
+      <Text style={styles.sectionTitle}>
+        Courses disponibles
+        {position ? ` · acceptables à moins de ${MAX_CLAIM_RADIUS_KM} km` : ''}
+      </Text>
+      {sortedTrips.length === 0 && <Text style={styles.emptyText}>Aucune course en attente pour l&apos;instant.</Text>}
+      {sortedTrips.map((t) => {
+        const distFromDriver =
+          position && t.origin_lat != null && t.origin_lng != null ? haversineKm(position, { lat: t.origin_lat, lng: t.origin_lng }) : null;
+        const outOfRange = distFromDriver != null && distFromDriver > MAX_CLAIM_RADIUS_KM;
+        return (
+          <Card key={t.id} style={[styles.tripRow, outOfRange && styles.tripRowOutOfRange]}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.tripRoute} numberOfLines={1}>
+                {t.origin} → {t.destination}
+              </Text>
+              <Text style={styles.tripMeta}>
+                {t.distance_km ? `${Number(t.distance_km).toFixed(1)} km` : '—'} · {t.price ? `${t.price} XOF` : 'Prix non estimé'}
+                {distFromDriver != null ? ` · à ${distFromDriver.toFixed(1)} km${outOfRange ? ' (hors secteur)' : ''}` : ''}
+              </Text>
+            </View>
+            <Button size="sm" onPress={() => handleClaim(t.id)} loading={claimingId === t.id} disabled={outOfRange}>
+              Prendre
+            </Button>
+          </Card>
+        );
+      })}
     </ScrollView>
   );
 }
@@ -175,6 +204,7 @@ const styles = StyleSheet.create({
   sectionTitle: { fontFamily: fonts.semiBold, fontSize: fontSizes.md, color: colors.text, marginBottom: spacing.md },
   emptyText: { fontFamily: fonts.regular, fontSize: fontSizes.sm, color: colors.muted, textAlign: 'center', paddingVertical: spacing.xl },
   tripRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
+  tripRowOutOfRange: { opacity: 0.6 },
   tripRoute: { fontFamily: fonts.medium, fontSize: fontSizes.sm, color: colors.text },
   tripMeta: { fontFamily: fonts.regular, fontSize: fontSizes.xs, color: colors.muted, marginTop: 2 },
   pendingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xxl, gap: spacing.md, backgroundColor: colors.background },

@@ -102,11 +102,29 @@ export function initRealtime(server: HttpServer) {
       try {
         // Sockets are ordered per-connection, so the last write here is always the most
         // recent position for this connection — no extra out-of-order handling needed.
-        await prisma.chauffeur.update({ where: { id: driverId }, data: { latitude: latN, longitude: lngN, isAvailable: true } })
+        // Availability is NOT touched here: it's owned by the explicit online/offline toggle
+        // and the claim/complete trip lifecycle. Forcing it back to true on every location
+        // ping (as the original Django consumer did) meant a driver mid-trip — whose app keeps
+        // streaming location the whole time — would flip back to "available" seconds after
+        // being claimed, reappearing to other passengers as free while actually busy.
+        await prisma.chauffeur.update({ where: { id: driverId }, data: { latitude: latN, longitude: lngN } })
       } catch {
         // unknown chauffeur id — ignore, mirrors Chauffeur.DoesNotExist handling
       }
       void maybeRecordLocationPing(driverId, latN, lngN)
+      // Mirror onto User.last{Latitude,Longitude,LocationAt} too, so this chauffeur shows up
+      // on the admin "all users" map (GET /api/auth/users/locations/) the same way a client does,
+      // and push it live to any admin with that map open (see presenceNsp 'location.update' below).
+      void presence.updateLocation(user.id, latN, lngN)
+      presenceNsp.to('admins').emit('message', {
+        type: 'presence.location',
+        user_id: user.id,
+        username: user.username,
+        phone: user.phone,
+        role: user.role,
+        lat: latN,
+        lng: lngN,
+      })
 
       const msg = { type: 'broadcast.location', driver_id: driverId, lat: latN, lng: lngN }
       driverNsp.to('drivers').emit('message', msg)
@@ -177,6 +195,27 @@ export function initRealtime(server: HttpServer) {
       phone: user.phone,
       role: user.role,
       online: true,
+    })
+
+    // Any authenticated user (client or chauffeur) can report its device position here —
+    // this is what puts a live dot on the admin map (GET /api/auth/users/locations/ +
+    // 'presence.location' broadcast below) instead of just the one-off pickup/dropoff
+    // coordinates captured at booking time. Emitted by frontend/src/components/LocationReporter.tsx.
+    socket.on('location.update', async (content: { lat?: number; lng?: number }) => {
+      const { lat, lng } = content
+      if (!isValidCoordinate(lat, lng)) return
+      const latN = Number(lat)
+      const lngN = Number(lng)
+      await presence.updateLocation(user.id, latN, lngN)
+      presenceNsp.to('admins').emit('message', {
+        type: 'presence.location',
+        user_id: user.id,
+        username: user.username,
+        phone: user.phone,
+        role: user.role,
+        lat: latN,
+        lng: lngN,
+      })
     })
 
     socket.on('disconnect', async () => {

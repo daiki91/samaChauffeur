@@ -25,28 +25,10 @@ type Props = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   fullWidth?: boolean
 }
 
-export default function Button({
-  variant = 'primary',
-  size = 'md',
-  loading = false,
-  icon,
-  fullWidth,
-  className = '',
-  children,
-  disabled,
-  ...rest
-}: Props) {
+export default function Button({ variant = 'primary', size = 'md', loading = false, icon, fullWidth, className = '', children, disabled, ...rest }: Props) {
   return (
-    <button
-      className={`inline-flex items-center justify-center font-medium transition-colors duration-150 disabled:cursor-not-allowed ${variantClasses[variant]} ${sizeClasses[size]} ${fullWidth ? 'w-full' : ''} ${className}`}
-      disabled={disabled || loading}
-      {...rest}
-    >
-      {loading ? (
-        <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-      ) : (
-        icon
-      )}
+    <button className={`inline-flex items-center justify-center font-medium transition-all duration-150 active:scale-[0.97] disabled:cursor-not-allowed disabled:active:scale-100 ${variantClasses[variant]} ${sizeClasses[size]} ${fullWidth ? 'w-full' : ''} ${className}`} disabled={disabled || loading} {...rest}>
+      {loading ? <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" /> : icon}
       {children}
     </button>
   )

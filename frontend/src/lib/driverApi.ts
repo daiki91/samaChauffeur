@@ -17,6 +17,11 @@ export async function acceptTrip(id: number) {
   return api.post(`/trips/${id}/accept/`)
 }
 
+/** Driver signals they've reached the pickup point, ahead of the passenger boarding. */
+export async function arriveTrip(id: number) {
+  return api.post(`/trips/${id}/arrived/`)
+}
+
 /** Driver signals the passenger is now in the vehicle — starts the actual course. */
 export async function startTrip(id: number) {
   return api.post(`/trips/${id}/start/`)
@@ -37,4 +42,4 @@ export async function downloadDriverReport(from: string, to: string) {
   return api.get('/chauffeurs/stats/report.pdf', { params: { from, to }, responseType: 'blob' })
 }
 
-export default { getAvailableTrips, claimTrip, getMyActiveTrip, acceptTrip, startTrip, endTrip, getDriverStats, downloadDriverReport }
+export default { getAvailableTrips, claimTrip, getMyActiveTrip, acceptTrip, arriveTrip, startTrip, endTrip, getDriverStats, downloadDriverReport }

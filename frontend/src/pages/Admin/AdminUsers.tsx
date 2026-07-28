@@ -8,6 +8,7 @@ import Spinner from '../../components/ui/Spinner'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import { Users, UserPlus, ChevronDown } from 'lucide-react'
+import AdminNav from '../../components/admin/AdminNav'
 
 type AdminUser = {
   id: number
@@ -124,6 +125,7 @@ export default function AdminUsers() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
+      <AdminNav />
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-stone-900">Comptes connectés</h1>

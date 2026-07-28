@@ -7,7 +7,7 @@ import { asyncHandler } from '../../utils/asyncHandler'
 import { authenticate, isSelfOrAdmin, requireAdmin } from '../../middleware/auth'
 import { signAccessToken, signRefreshToken, validateRefreshToken, verifyRefreshTokenSignature, revokeRefreshToken } from '../../lib/jwt'
 import { generateOtp, getSmsProvider } from './sms'
-import { getOnlineSnapshot, isOnline } from '../../realtime/presence'
+import { getOnlineSnapshot, isOnline, getEntry, updateLocation } from '../../realtime/presence'
 
 const router = Router()
 
@@ -284,6 +284,98 @@ router.get(
   asyncHandler(async (_req, res) => {
     const snapshot = getOnlineSnapshot()
     return res.json(snapshot.map((u) => ({ user_id: u.userId, username: u.username, phone: u.phone, role: u.role })))
+  }),
+)
+
+// ---------- POST /location/ (any authenticated user — client or chauffeur) ----------
+// Fallback/companion to the socket 'location.update' event (see realtime/socket.ts): lets the
+// mobile/web app report a position over plain REST when no realtime socket is open (e.g. a
+// background location ping). Feeds the same User.last{Latitude,Longitude,LocationAt} columns
+// used by GET /users/locations/ below.
+
+const locationSchema = z.object({
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+})
+
+router.post(
+  '/location/',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const parsed = locationSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json(parsed.error.flatten())
+    await updateLocation(req.user!.id, parsed.data.lat, parsed.data.lng)
+    return res.status(204).end()
+  }),
+)
+
+// ---------- GET /users/locations/ (admin) ----------
+// Powers the admin "où sont les utilisateurs" map: one row per client/chauffeur that has a
+// known position — a live one (currently connected) or the last one recorded before they
+// disconnected. Chauffeurs get their live GPS position (Chauffeur.latitude/longitude, streamed
+// continuously over /ws/realtime/driver) in priority while online; everyone else (clients, and
+// chauffeurs when offline) falls back to the generic User.lastLatitude/lastLongitude snapshot.
+
+router.get(
+  '/users/locations/',
+  authenticate,
+  requireAdmin,
+  asyncHandler(async (_req, res) => {
+    const users = await prisma.user.findMany({
+      where: { role: { in: ['CLIENT', 'CHAUFFEUR'] } },
+      include: { chauffeur: true },
+      orderBy: { id: 'asc' },
+    })
+
+    const result = users
+      .map((u) => {
+        const online = isOnline(u.id)
+        let latitude: number | null = null
+        let longitude: number | null = null
+        let locatedAt: string | null = null
+        let isLive = false
+
+        if (online && u.chauffeur?.latitude != null && u.chauffeur?.longitude != null) {
+          // Verified/live driver position, kept fresh by the '/ws/realtime/driver' socket.
+          latitude = u.chauffeur.latitude
+          longitude = u.chauffeur.longitude
+          locatedAt = new Date().toISOString()
+          isLive = true
+        } else if (online) {
+          // Connected but no chauffeur GPS stream — use the live presence position, if reported.
+          const entry = getEntry(u.id)
+          if (entry?.latitude != null && entry?.longitude != null) {
+            latitude = entry.latitude
+            longitude = entry.longitude
+            locatedAt = new Date().toISOString()
+            isLive = true
+          }
+        }
+
+        if (latitude == null) {
+          // Offline (or online with no live fix yet) — fall back to the last known position.
+          latitude = u.lastLatitude
+          longitude = u.lastLongitude
+          locatedAt = u.lastLocationAt ? u.lastLocationAt.toISOString() : null
+        }
+
+        if (latitude == null || longitude == null) return null // no location data at all yet
+
+        return {
+          user_id: u.id,
+          username: u.username,
+          phone: u.phone,
+          role: u.role,
+          is_online: online,
+          is_live: isLive,
+          latitude,
+          longitude,
+          located_at: locatedAt,
+        }
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== null)
+
+    return res.json(result)
   }),
 )
 

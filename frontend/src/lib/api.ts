@@ -35,6 +35,10 @@ export async function getMe() {
   return api.get('/auth/me/')
 }
 
+export async function updateMe(payload: { username?: string; language?: 'fr' | 'wo' }) {
+  return api.patch('/auth/me/', payload)
+}
+
 export async function getUsers() {
   return api.get('/auth/users/')
 }
@@ -59,8 +63,23 @@ export async function deleteAdminChauffeur(id: number) {
   return api.delete(`/chauffeurs/admin/chauffeurs/${id}/`)
 }
 
+/** Average rating + review count for a chauffeur — shown to the passenger before the ride. */
+export async function getChauffeurRatingSummary(id: number) {
+  return api.get(`/chauffeurs/${id}/rating-summary/`)
+}
+
 export async function getAdminTrips(limit = 200) {
   return api.get(`/trips/admin/all/?limit=${limit}`)
+}
+
+/** Reports the current user's device position — feeds the admin "last known location" map. */
+export async function updateMyLocation(lat: number, lng: number) {
+  return api.post('/auth/location/', { lat, lng })
+}
+
+/** Admin — every client/chauffeur with a known position: live if connected, last seen otherwise. */
+export async function getUserLocations() {
+  return api.get('/auth/users/locations/')
 }
 
 // Response interceptor to auto-refresh token on 401
@@ -147,10 +166,13 @@ export async function createTrip(payload: {
   destination: string
   dest_lat?: number
   dest_lng?: number
+  stops?: { label: string; lat?: number; lng?: number }[]
   mode?: string
   vehicle_type?: string
   distance_km?: number
   payment_method?: string
+  scheduled_at?: string
+  promo_code?: string
 }) {
   return api.post('/trips/create/', payload)
 }
@@ -165,6 +187,35 @@ export async function cancelTrip(id: number) {
 
 export async function updateTripVehicleType(id: number, vehicle_type: string) {
   return api.post(`/trips/${id}/vehicle-type/`, { vehicle_type })
+}
+
+export async function rateTrip(id: number, rating: number, comment?: string) {
+  return api.post(`/trips/${id}/rate/`, { rating, comment })
+}
+
+export async function skipTripRating(id: number) {
+  return api.post(`/trips/${id}/skip-rating/`)
+}
+
+export async function shareTrip(id: number) {
+  return api.post(`/trips/${id}/share/`)
+}
+
+/** Public — no auth, used by the read-only /share/trip/:token page. */
+export async function getSharedTrip(token: string) {
+  return api.get(`/trips/shared/${token}/`)
+}
+
+export async function triggerSos(id: number, lat?: number, lng?: number) {
+  return api.post(`/trips/${id}/sos/`, { lat, lng })
+}
+
+export async function getAdminSosAlerts() {
+  return api.get('/trips/admin/sos/')
+}
+
+export async function resolveSosAlert(id: number) {
+  return api.post(`/trips/admin/sos/${id}/resolve/`)
 }
 
 export async function updateTripPaymentMethod(id: number, payment_method: string) {
@@ -220,12 +271,32 @@ export async function estimatePrice(payload: { distance_km: number; vehicle_type
   return api.post('/pricing/estimate/', payload)
 }
 
+export async function getMyClientProfile() {
+  return api.get('/clients/profile/')
+}
+
+export async function getRewardsStatus() {
+  return api.get('/trips/rewards/')
+}
+
+export async function saveDiscountCode(code: string) {
+  return api.post('/clients/promo-code/', { code })
+}
+
 export async function setChauffeurAvailability(is_available: boolean) {
   return api.post('/chauffeurs/availability/', { is_available })
 }
 
 export async function updateLocation(latitude: number, longitude: number) {
   return api.post('/chauffeurs/location/', { latitude, longitude })
+}
+
+export async function updateChauffeurPhoto(photo: string | null) {
+  return api.post('/chauffeurs/photo/', { photo })
+}
+
+export async function getMyChauffeurProfile() {
+  return api.get('/chauffeurs/me/')
 }
 
 export default api
