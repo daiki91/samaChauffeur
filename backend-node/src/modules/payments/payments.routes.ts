@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import prisma from '../../lib/prisma'
 import { asyncHandler } from '../../utils/asyncHandler'
-import { authenticate, requireAdmin } from '../../middleware/auth'
+import { authenticate, requireAdmin, requireChauffeur } from '../../middleware/auth'
 
 const router = Router()
 
@@ -262,13 +262,17 @@ router.delete(
 
 // ---------- GET/POST /payouts/ (admin) ----------
 
+function toPayoutAdmin(p: any) {
+  return { ...toPayout(p), chauffeur_username: p.chauffeur?.user?.username, chauffeur_phone: p.chauffeur?.user?.phone }
+}
+
 router.get(
   '/payouts/',
   authenticate,
   requireAdmin,
   asyncHandler(async (_req, res) => {
-    const payouts = await prisma.payout.findMany({ orderBy: { id: 'desc' } })
-    return res.json(payouts.map(toPayout))
+    const payouts = await prisma.payout.findMany({ orderBy: { id: 'desc' }, include: { chauffeur: { include: { user: true } } } })
+    return res.json(payouts.map(toPayoutAdmin))
   }),
 )
 
@@ -295,6 +299,126 @@ router.post(
         status: d.status,
         scheduledAt: d.scheduled_at ? new Date(d.scheduled_at) : undefined,
         metadata: d.metadata ?? undefined,
+      },
+    })
+    return res.status(201).json(toPayout(payout))
+  }),
+)
+
+// ---------- PATCH /payouts/:pk/ (admin) ----------
+// Marks a payout PROCESSED (transfer done) or FAILED — the counterpart to the driver's
+// self-service POST /payouts/request/, which always starts SCHEDULED.
+
+const payoutStatusSchema = z.object({
+  status: z.enum(['SCHEDULED', 'PROCESSED', 'FAILED']),
+})
+
+router.patch(
+  '/payouts/:pk/',
+  authenticate,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const pk = parseInt(req.params.pk, 10)
+    const parsed = payoutStatusSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json(parsed.error.flatten())
+    const payout = await prisma.payout.findUnique({ where: { id: pk } })
+    if (!payout) return res.status(404).json({ detail: 'Not found' })
+    const updated = await prisma.payout.update({
+      where: { id: pk },
+      data: { status: parsed.data.status, processedAt: parsed.data.status === 'PROCESSED' ? new Date() : payout.processedAt },
+      include: { chauffeur: { include: { user: true } } },
+    })
+    return res.json(toPayoutAdmin(updated))
+  }),
+)
+
+// ---------- GET /payouts/me/ (chauffeur) ----------
+// The driver's own payout history — the self-service counterpart to the admin-only /payouts/
+// above, which lists everyone's.
+
+router.get(
+  '/payouts/me/',
+  authenticate,
+  requireChauffeur,
+  asyncHandler(async (req, res) => {
+    const chauffeur = await prisma.chauffeur.findUnique({ where: { userId: req.user!.id } })
+    if (!chauffeur) return res.status(400).json({ detail: 'No chauffeur profile' })
+    const payouts = await prisma.payout.findMany({ where: { chauffeurId: chauffeur.id }, orderBy: { id: 'desc' } })
+    return res.json(payouts.map(toPayout))
+  }),
+)
+
+// ---------- GET /earnings/summary/ (chauffeur) ----------
+// Lifetime earnings vs. what's already been paid out (SCHEDULED counts as claimed, not just
+// PROCESSED, so a driver can't request the same money twice while a payout is pending) —
+// the difference is what's still available to withdraw.
+
+router.get(
+  '/earnings/summary/',
+  authenticate,
+  requireChauffeur,
+  asyncHandler(async (req, res) => {
+    const chauffeur = await prisma.chauffeur.findUnique({ where: { userId: req.user!.id } })
+    if (!chauffeur) return res.status(400).json({ detail: 'No chauffeur profile' })
+
+    const earningsAgg = await prisma.trip.aggregate({
+      where: { driverId: chauffeur.id, status: 'COMPLETED' },
+      _sum: { price: true },
+    })
+    const paidOutAgg = await prisma.payout.aggregate({
+      where: { chauffeurId: chauffeur.id, status: { in: ['SCHEDULED', 'PROCESSED'] } },
+      _sum: { amount: true },
+    })
+
+    const totalEarnings = earningsAgg._sum.price ?? 0
+    const totalPaidOut = Number(paidOutAgg._sum.amount ?? 0)
+    const availableBalance = Math.max(0, totalEarnings - totalPaidOut)
+
+    return res.json({ total_earnings: totalEarnings, total_paid_out: totalPaidOut, available_balance: availableBalance })
+  }),
+)
+
+// ---------- POST /payouts/request/ (chauffeur) ----------
+// Self-service withdrawal request. Unlike the admin POST /payouts/ above (which can create a
+// payout in any status, for any chauffeur), this always targets the caller's own profile and
+// always starts SCHEDULED — an admin marks it PROCESSED (or FAILED) once the transfer is done.
+
+const payoutRequestSchema = z.object({
+  amount: z.number().positive(),
+  method: z.string().optional(),
+})
+
+router.post(
+  '/payouts/request/',
+  authenticate,
+  requireChauffeur,
+  asyncHandler(async (req, res) => {
+    const parsed = payoutRequestSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json(parsed.error.flatten())
+
+    const chauffeur = await prisma.chauffeur.findUnique({ where: { userId: req.user!.id } })
+    if (!chauffeur) return res.status(400).json({ detail: 'No chauffeur profile' })
+
+    const earningsAgg = await prisma.trip.aggregate({
+      where: { driverId: chauffeur.id, status: 'COMPLETED' },
+      _sum: { price: true },
+    })
+    const paidOutAgg = await prisma.payout.aggregate({
+      where: { chauffeurId: chauffeur.id, status: { in: ['SCHEDULED', 'PROCESSED'] } },
+      _sum: { amount: true },
+    })
+    const availableBalance = Math.max(0, (earningsAgg._sum.price ?? 0) - Number(paidOutAgg._sum.amount ?? 0))
+
+    if (parsed.data.amount > availableBalance) {
+      return res.status(400).json({ detail: `Montant demandé supérieur au solde disponible (${availableBalance} XOF).` })
+    }
+
+    const payout = await prisma.payout.create({
+      data: {
+        chauffeurId: chauffeur.id,
+        amount: parsed.data.amount,
+        status: 'SCHEDULED',
+        metadata: { requested_by_driver: true, method: parsed.data.method ?? null },
       },
     })
     return res.status(201).json(toPayout(payout))

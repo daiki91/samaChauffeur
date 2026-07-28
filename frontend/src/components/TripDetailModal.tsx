@@ -27,15 +27,19 @@ type Trip = ActiveTrip & { started_at: string | null; ended_at: string | null }
 type Props = {
   trip: Trip | null
   onClose: () => void
-  onRate: (trip: Trip, rating: number, comment?: string) => void
-  onSkipRating: (trip: Trip) => void
-  ratingSubmitting: boolean
+  onRate?: (trip: Trip, rating: number, comment?: string) => void
+  onSkipRating?: (trip: Trip) => void
+  ratingSubmitting?: boolean
+  // 'CLIENT' (default) can rate the driver once the trip is over. 'CHAUFFEUR' only ever reads —
+  // rating your own passenger back isn't a feature here, and the driver's own identity in
+  // driver_detail would just be redundant, so a passenger block is shown instead.
+  viewerRole?: 'CLIENT' | 'CHAUFFEUR'
 }
 
-export default function TripDetailModal({ trip, onClose, onRate, onSkipRating, ratingSubmitting }: Props) {
+export default function TripDetailModal({ trip, onClose, onRate, onSkipRating, ratingSubmitting, viewerRole = 'CLIENT' }: Props) {
   if (!trip) return null
 
-  const canRate = trip.status === 'COMPLETED' && !trip.rating
+  const canRate = viewerRole === 'CLIENT' && trip.status === 'COMPLETED' && !trip.rating
   const perKm = trip.price != null && trip.distance_km ? trip.price / trip.distance_km : null
 
   return (
@@ -113,7 +117,7 @@ export default function TripDetailModal({ trip, onClose, onRate, onSkipRating, r
           </div>
         </div>
 
-        {trip.driver_detail && (
+        {viewerRole === 'CLIENT' && trip.driver_detail && (
           <div className="mt-4 rounded-xl bg-secondary-50 border border-secondary-100 px-4 py-3">
             <div className="text-[11px] text-secondary-600 uppercase tracking-wide mb-1">Chauffeur</div>
             <div className="text-sm font-semibold text-stone-800">{trip.driver_detail.username || trip.driver_detail.phone}</div>
@@ -125,6 +129,13 @@ export default function TripDetailModal({ trip, onClose, onRate, onSkipRating, r
           </div>
         )}
 
+        {viewerRole === 'CHAUFFEUR' && trip.passenger_detail && (
+          <div className="mt-4 rounded-xl bg-secondary-50 border border-secondary-100 px-4 py-3">
+            <div className="text-[11px] text-secondary-600 uppercase tracking-wide mb-1">Passager</div>
+            <div className="text-sm font-semibold text-stone-800">{trip.passenger_detail.username || trip.passenger_detail.phone}</div>
+          </div>
+        )}
+
         {trip.started_at && (
           <div className="mt-3 flex items-center gap-1.5 text-xs text-stone-400">
             <Clock3 size={13} />
@@ -133,9 +144,9 @@ export default function TripDetailModal({ trip, onClose, onRate, onSkipRating, r
           </div>
         )}
 
-        {canRate && (
+        {canRate && onRate && onSkipRating && (
           <div className="print-hide mt-5">
-            <RatingCard driverName={trip.driver_detail?.username} onRate={(rating, comment) => onRate(trip, rating, comment)} onSkip={() => onSkipRating(trip)} submitting={ratingSubmitting} />
+            <RatingCard driverName={trip.driver_detail?.username} onRate={(rating, comment) => onRate(trip, rating, comment)} onSkip={() => onSkipRating(trip)} submitting={!!ratingSubmitting} />
           </div>
         )}
 
@@ -144,12 +155,16 @@ export default function TripDetailModal({ trip, onClose, onRate, onSkipRating, r
             <div className="flex items-center justify-between mb-1">
               <span className="text-sm text-stone-600 flex items-center gap-1.5">
                 <Star size={14} className="text-accent-500" fill="currentColor" />
-                Votre note
+                {viewerRole === 'CHAUFFEUR' ? 'Note reçue' : 'Votre note'}
               </span>
               <StarRating value={trip.rating.rating} readOnly size={15} />
             </div>
             {trip.rating.comment && <p className="text-xs text-stone-500 mt-1.5 italic">"{trip.rating.comment}"</p>}
           </div>
+        )}
+
+        {viewerRole === 'CHAUFFEUR' && trip.status === 'COMPLETED' && !trip.rating && (
+          <p className="mt-5 text-xs text-stone-400 text-center">En attente de la note du passager.</p>
         )}
 
         <div className="print-hide flex gap-2 mt-5">

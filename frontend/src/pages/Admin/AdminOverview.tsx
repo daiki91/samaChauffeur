@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { getUsers, getAdminChauffeurs, getAdminVehicles, getAdminTrips, verifyChauffeur, rejectChauffeur, getAdminSosAlerts, resolveSosAlert } from '../../lib/api'
+import { getUsers, getAdminChauffeurs, getAdminVehicles, getAdminTrips, verifyChauffeur, rejectChauffeur, getAdminSosAlerts, resolveSosAlert, getAdminPayouts, updatePayoutStatus } from '../../lib/api'
 import Card from '../../components/ui/Card'
 import Badge from '../../components/ui/Badge'
 import Spinner from '../../components/ui/Spinner'
 import Button from '../../components/ui/Button'
 import MiniBarChart from '../../components/admin/MiniBarChart'
 import { useToasts } from '../../components/Toasts'
-import { Users, Car, Truck, Route as RouteIcon, ShieldCheck, Activity, X, Check, Ban, ShieldAlert, MapPin } from 'lucide-react'
+import { Users, Car, Truck, Route as RouteIcon, ShieldCheck, Activity, X, Check, Ban, ShieldAlert, MapPin, FileText, Wallet } from 'lucide-react'
 
 type AdminUser = { id: number; username: string; phone: string; role: string; phone_verified: boolean }
 type AdminChauffeur = {
@@ -18,6 +18,18 @@ type AdminChauffeur = {
   is_available: boolean
   is_online: boolean
   vehicle: { id: number; type: string; seats: number; plate_number: string } | null
+  permit?: string | null
+  insurance?: string | null
+}
+type AdminPayout = {
+  id: number
+  chauffeur: number
+  chauffeur_username?: string
+  chauffeur_phone?: string
+  amount: number
+  status: 'SCHEDULED' | 'PROCESSED' | 'FAILED'
+  scheduled_at: string | null
+  processed_at: string | null
 }
 type AdminVehicle = { id: number; type: string; seats: number; plate_number: string }
 type SosAlert = {
@@ -48,6 +60,11 @@ type AdminTrip = {
 
 const VEHICLE_LABELS: Record<string, string> = { CAR: 'Voiture', SEDAN: 'Berline', SUV: '4x4', MINIBUS: 'Minibus', BUS: 'Bus' }
 const PAYMENT_LABELS: Record<string, string> = { CASH: 'Espèces', ORANGE: 'Orange Money', WAVE: 'Wave', FREE: 'Free Money', CARD: 'Carte' }
+const PAYOUT_STATUS_STYLE: Record<AdminPayout['status'], { label: string; className: string }> = {
+  SCHEDULED: { label: 'En attente', className: 'bg-accent-300/40 text-accent-700' },
+  PROCESSED: { label: 'Versé', className: 'bg-secondary-100 text-secondary-800' },
+  FAILED: { label: 'Échoué', className: 'bg-red-100 text-red-700' },
+}
 
 const STATUS_ORDER = ['REQUESTED', 'ASSIGNED', 'ACCEPTED', 'STARTED', 'COMPLETED', 'CANCELLED']
 const STATUS_COLORS: Record<string, string> = {
@@ -59,7 +76,7 @@ const STATUS_COLORS: Record<string, string> = {
   CANCELLED: 'bg-red-400',
 }
 
-type Tab = 'clients' | 'chauffeurs' | 'vehicules' | 'courses'
+type Tab = 'clients' | 'chauffeurs' | 'vehicules' | 'courses' | 'retraits'
 
 function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: number | string }) {
   return (
@@ -93,18 +110,21 @@ export default function AdminOverview() {
   const [acting, setActing] = useState<'accept' | 'reject' | null>(null)
   const [sosAlerts, setSosAlerts] = useState<SosAlert[]>([])
   const [resolvingSos, setResolvingSos] = useState<number | null>(null)
+  const [payouts, setPayouts] = useState<AdminPayout[]>([])
+  const [processingPayout, setProcessingPayout] = useState<number | null>(null)
 
   useEffect(() => {
     let active = true
     async function load() {
       try {
-        const [u, c, v, t, s] = await Promise.all([getUsers(), getAdminChauffeurs(), getAdminVehicles(), getAdminTrips(), getAdminSosAlerts()])
+        const [u, c, v, t, s, p] = await Promise.all([getUsers(), getAdminChauffeurs(), getAdminVehicles(), getAdminTrips(), getAdminSosAlerts(), getAdminPayouts()])
         if (!active) return
         setUsers(u.data)
         setChauffeurs(c.data)
         setVehicles(v.data)
         setTrips(t.data)
         setSosAlerts(s.data)
+        setPayouts(p.data)
       } catch (e) {
         // ignore — sections just stay empty
       } finally {
@@ -116,6 +136,21 @@ export default function AdminOverview() {
       active = false
     }
   }, [])
+
+  const handlePayoutStatus = async (id: number, status: 'PROCESSED' | 'FAILED') => {
+    setProcessingPayout(id)
+    try {
+      const r = await updatePayoutStatus(id, status)
+      setPayouts((prev) => prev.map((p) => (p.id === id ? r.data : p)))
+      addToast({ message: status === 'PROCESSED' ? 'Retrait marqué comme versé.' : 'Retrait marqué comme échoué.', tone: status === 'PROCESSED' ? 'success' : 'info' })
+    } catch (e: any) {
+      addToast({ message: e?.response?.data?.detail || 'Erreur lors de la mise à jour du retrait', tone: 'error' })
+    } finally {
+      setProcessingPayout(null)
+    }
+  }
+
+  const pendingPayoutsCount = useMemo(() => payouts.filter((p) => p.status === 'SCHEDULED').length, [payouts])
 
   // SOS alerts are time-critical — refresh them on their own short cadence so an admin who's
   // just looking at the page (no action needed) still notices a new one reasonably quickly.
@@ -310,15 +345,21 @@ export default function AdminOverview() {
             ['chauffeurs', `Chauffeurs (${chauffeurs.length})`],
             ['vehicules', `Véhicules (${vehicles.length})`],
             ['courses', `Courses (${trips.length})`],
+            ['retraits', `Retraits (${payouts.length})`],
           ] as [Tab, string][]).map(([key, label]) => (
             <button
               key={key}
               onClick={() => setTab(key)}
-              className={`px-3.5 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+              className={`relative px-3.5 py-2 text-sm font-medium rounded-t-lg transition-colors ${
                 tab === key ? 'bg-brand-50 text-brand-700' : 'text-stone-500 hover:text-stone-800'
               }`}
             >
               {label}
+              {key === 'retraits' && pendingPayoutsCount > 0 && (
+                <span className="absolute -top-1 -right-1 grid place-items-center w-4 h-4 rounded-full bg-accent-500 text-white text-[10px] font-bold">
+                  {pendingPayoutsCount}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -479,6 +520,54 @@ export default function AdminOverview() {
               </tbody>
             </table>
           )}
+
+          {tab === 'retraits' && (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-stone-400">
+                  <th className="px-5 py-3 font-medium">Chauffeur</th>
+                  <th className="px-5 py-3 font-medium">Montant</th>
+                  <th className="px-5 py-3 font-medium">Statut</th>
+                  <th className="px-5 py-3 font-medium">Demandé le</th>
+                  <th className="px-5 py-3 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-100">
+                {payouts.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="text-center text-stone-400 py-8">Aucune demande de retrait.</td>
+                  </tr>
+                )}
+                {payouts.map((p) => (
+                  <tr key={p.id}>
+                    <td className="px-5 py-3 font-medium text-stone-800">
+                      {p.chauffeur_username || `#${p.chauffeur}`}
+                      {p.chauffeur_phone && <div className="text-xs text-stone-400 font-normal">{p.chauffeur_phone}</div>}
+                    </td>
+                    <td className="px-5 py-3 text-stone-600">{p.amount.toLocaleString('fr-FR')} XOF</td>
+                    <td className="px-5 py-3">
+                      <span className={`inline-flex items-center rounded-full text-xs font-semibold px-2.5 py-1 ${PAYOUT_STATUS_STYLE[p.status].className}`}>{PAYOUT_STATUS_STYLE[p.status].label}</span>
+                    </td>
+                    <td className="px-5 py-3 text-stone-400 whitespace-nowrap">{p.scheduled_at ? formatDateTime(p.scheduled_at) : '—'}</td>
+                    <td className="px-5 py-3">
+                      {p.status === 'SCHEDULED' ? (
+                        <div className="flex items-center gap-1.5">
+                          <Button size="sm" variant="secondary" loading={processingPayout === p.id} onClick={() => handlePayoutStatus(p.id, 'PROCESSED')} icon={<Wallet size={13} />}>
+                            Versé
+                          </Button>
+                          <Button size="sm" variant="danger" disabled={processingPayout === p.id} onClick={() => handlePayoutStatus(p.id, 'FAILED')}>
+                            Échoué
+                          </Button>
+                        </div>
+                      ) : (
+                        <span className="text-stone-300">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </Card>
 
@@ -516,6 +605,32 @@ export default function AdminOverview() {
               <div className="flex items-center justify-between rounded-xl border border-stone-100 bg-stone-50 px-4 py-2.5 text-sm">
                 <span className="text-stone-500">Plaque</span>
                 <span className="font-medium text-stone-800">{reviewing.vehicle?.plate_number || '—'}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl border border-stone-100 bg-stone-50 px-4 py-2.5 text-sm">
+                <span className="text-stone-500 flex items-center gap-1.5">
+                  <FileText size={13} />
+                  Permis
+                </span>
+                {reviewing.permit ? (
+                  <a href={reviewing.permit} target="_blank" rel="noreferrer" className="font-medium text-brand-600 hover:underline">
+                    Voir le document
+                  </a>
+                ) : (
+                  <span className="text-stone-300">Non fourni</span>
+                )}
+              </div>
+              <div className="flex items-center justify-between rounded-xl border border-stone-100 bg-stone-50 px-4 py-2.5 text-sm">
+                <span className="text-stone-500 flex items-center gap-1.5">
+                  <FileText size={13} />
+                  Assurance
+                </span>
+                {reviewing.insurance ? (
+                  <a href={reviewing.insurance} target="_blank" rel="noreferrer" className="font-medium text-brand-600 hover:underline">
+                    Voir le document
+                  </a>
+                ) : (
+                  <span className="text-stone-300">Non fourni</span>
+                )}
               </div>
             </div>
 
