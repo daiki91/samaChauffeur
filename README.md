@@ -1,39 +1,60 @@
 # samaChauffeur
 
-Une application de type ride‑hailing (backend Django + API REST + WebSockets + frontend React/Vite).
+Une application de type ride‑hailing (backend Node.js/Express + API REST + WebSockets (Socket.io) + frontend React/Vite).
+
+> ℹ️ Le backend a été entièrement réécrit de Django vers Node.js/Express (voir `backend-node/`). L'ancien
+> backend Django (`backend/`) est conservé pour référence mais n'est plus utilisé — vous pouvez le supprimer
+> une fois que la migration est validée.
 
 ## 🚀 Présentation
-- Backend : Django 6, Django REST Framework, Channels (ASGI) — API REST et WebSockets.
+- Backend : Node.js + Express + TypeScript, Prisma ORM, Socket.io (WebSockets).
 - Frontend : React + TypeScript + Vite.
-- Base de données : MySQL (défaut), Channels utilise Redis pour le canal de messages.
+- Base de données : Supabase Postgres (projet `samaChauffeur`, région `eu-west-1`).
 
 ---
 
 ## ⚙️ Démarrage rapide (développement)
-Prérequis : Python 3.10+, Node.js & npm, MySQL, Redis.
+Prérequis : Node.js 18+ & npm, un projet Supabase (Postgres).
 
-1. Installer les dépendances backend
+1. Configurer et installer le backend
 
 ```bash
-python -m venv .venv
-.venv\Scripts\activate      # Windows
-pip install -r backend/requirements.txt
+cd backend-node
+cp .env.example .env   # si besoin — un .env est déjà fourni avec les clés du projet Supabase
+npm install
 ```
 
-2. Configurer la base de données et (optionnel) Twilio
-- Voir `backend/config/settings.py` pour les valeurs par défaut.
-- Variables utiles (export / set) :
-  - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`
-  - `VITE_API_BASE` (frontend)
-  - Redis doit être disponible sur `127.0.0.1:6379` (ou ajuster `CHANNEL_LAYERS`).
+Complétez `DATABASE_URL` et `DIRECT_URL` dans `backend-node/.env` avec le mot de passe de la base
+(Supabase Dashboard → Project Settings → Database → Connection string). Les clés API et l'URL JWKS
+du projet `samaChauffeur` (qissfmhbzyogqnlndctj / eu-west-1) sont déjà renseignées.
 
-3. Migrer et lancer le serveur Django (ASGI pour WebSockets)
+2. Créer les tables dans Supabase
+
+Deux options :
+
+**Option A — script SQL direct (recommandé, le plus fiable)**
+Ouvrez Supabase Dashboard → votre projet → **SQL Editor** → New query, collez tout le contenu de
+[`backend-node/prisma/supabase_init.sql`](backend-node/prisma/supabase_init.sql) et cliquez **Run**.
+Ce script crée toutes les tables/enums/index et insère les règles de tarification par défaut. Il est
+idempotent (peut être relancé sans risque).
+
+**Option B — migration Prisma**
 
 ```bash
-cd backend
-python manage.py migrate
-python manage.py runserver 0.0.0.0:8000
-# Pour ASGI + Channels en prod on utilise daphne/uvicorn (ex. `daphne config.asgi:application`)
+npx prisma migrate dev --name init
+```
+
+Dans les deux cas, générez ensuite le client Prisma :
+
+```bash
+npx prisma generate
+```
+
+3. Lancer le serveur (API REST + Socket.io sur le même port)
+
+```bash
+npm run dev
+# écoute sur http://0.0.0.0:8000 par défaut (voir PORT dans .env)
 ```
 
 4. Lancer le frontend
@@ -44,15 +65,14 @@ npm install
 npm run dev
 ```
 
+Le frontend lit `VITE_API_BASE` (défaut `http://127.0.0.1:8000/api`) et `VITE_SOCKET_BASE`
+(défaut `http://127.0.0.1:8000`) — voir `frontend/.env`.
+
 ---
 
-## ✅ Tests
-- Lancer la suite Django :
-
-```bash
-cd backend
-python manage.py test
-```
+## ✅ Vérification
+- Backend : `npm run build` (compilation TypeScript) dans `backend-node/`.
+- Frontend : `npm run build` (tsc + vite build) dans `frontend/`.
 
 ---
 
@@ -65,7 +85,8 @@ python manage.py test
 ## 📡 API — Liste complète des endpoints
 Base URL API : `/api/`
 
-Remarque : les chemins ci‑dessous incluent le préfixe `/api` tel que défini dans `backend/config/urls.py`.
+Remarque : les chemins ci‑dessous incluent le préfixe `/api` tel que défini dans `backend-node/src/app.ts`
+(inchangés par rapport à l'ancien backend Django, pour ne pas casser le frontend existant).
 
 ### Auth / Utilisateurs (`/api/auth/`)
 - POST `/api/auth/register/` — Créer un utilisateur (body : `phone`, etc.). Auth : public ✅
@@ -81,8 +102,10 @@ Remarque : les chemins ci‑dessous incluent le préfixe `/api` tel que défini 
 ### Chauffeurs (`/api/chauffeurs/`)
 - POST `/api/chauffeurs/apply/` — Postuler comme chauffeur (auth requis)
 - POST `/api/chauffeurs/verify/<pk>/` — Vérifier un chauffeur (admin)
+- POST `/api/chauffeurs/reject/<pk>/` — Refuser une candidature chauffeur : supprime le profil et repasse l'utilisateur en CLIENT (admin)
 - GET `/api/chauffeurs/available/?lat=&lng=&radius=` — Chauffeurs disponibles (client)
 - POST `/api/chauffeurs/location/` — Mettre à jour localisation (chauffeur)
+- POST `/api/chauffeurs/availability/` — Basculer en ligne/hors ligne (body: `is_available`, chauffeur)
 - GET, POST `/api/chauffeurs/vehicles/` — Liste/création véhicules (admin)
 - GET, POST `/api/chauffeurs/admin/chauffeurs/` — Admin list/create chauffeurs
 
@@ -130,21 +153,18 @@ Remarque : les chemins ci‑dessous incluent le préfixe `/api` tel que défini 
 - GET, PATCH `/api/tickets/<id>/` — Détails / mise à jour (owner ou admin)
 - GET, POST `/api/tickets/admin/` — Admin list/create tickets (admin)
 
-### Admin / UI
-- Django admin : `/admin/`
-
 ---
 
-## 🌐 WebSocket (Realtime)
-URL (ASGI / Channels):
-- `ws://<host>/ws/realtime/driver/` — Consumer pour chauffeurs vérifiés
-  - Auth requis (user authentifié + profil chauffeur vérifié)
-  - Messages envoyés par client (ex.) :
-    - `{ "type": "location.update", "driver_id": <id>, "lat": <float>, "lng": <float> }`
-  - Messages reçus : `broadcast.location`, `trip.requested`, `trip.assigned`, etc.
+## 🌐 Realtime (Socket.io)
+Namespaces Socket.io (port unique, même serveur HTTP que l'API), authentification par JWT passé en
+`auth: { token }` ou `?token=` à la connexion (équivalent du `JWTAuthMiddleware` de Channels) :
 
-- `ws://<host>/ws/realtime/drivers/` — Consumer lecture pour clients/admin (recevoir positions)
-- `ws://<host>/ws/realtime/trip/<trip_id>/` — Notifications de la course (passager/chauffeur/admin)
+- `/ws/realtime/driver` — chauffeurs vérifiés uniquement (lecture + écriture position)
+  - Émission client → serveur : `location.update` `{ lat, lng }`
+  - Réception (`message`) : `broadcast.location`, `trip.requested`, `trip.assigned`
+- `/ws/realtime/drivers` — clients/admin, lecture seule des positions chauffeurs
+- `/ws/realtime/trip/<trip_id>` — passager/chauffeur/admin de la course concernée
+  - Réception (`message`) : `trip.update` `{ status, trip_id }`
 
 ---
 
@@ -176,20 +196,19 @@ curl -X POST http://127.0.0.1:8000/api/trips/create/ -H 'Authorization: Bearer <
 ---
 
 ## 💡 Notes & dépendances importantes
-- Redis requis pour Channels (`CHANNEL_LAYERS` dans `backend/config/settings.py`).
-- Base MySQL configurée par défaut dans `settings.py` — modifiez les identifiants pour votre environnement.
-- Twilio : optionnel — si non configuré, un provider de développement (stub) est utilisé pour OTP.
+- Base de données : Supabase Postgres — pas de Redis requis (Socket.io gère les rooms en mémoire dans le
+  process Node ; pour un déploiement multi-instance, ajouter l'adaptateur Redis de Socket.io).
+- Twilio : optionnel — si non configuré, un provider de développement (stub, log console) est utilisé pour l'OTP.
+- Auth : JWT maison (access + refresh, signés avec `ACCESS_TOKEN_SECRET`/`REFRESH_TOKEN_SECRET`), pas
+  Supabase Auth — `SUPABASE_JWKS_URL` est fourni dans `.env` pour une éventuelle intégration future mais
+  n'est pas utilisé par le flux d'authentification actuel (téléphone + mot de passe, identique à l'ancien
+  backend Django pour ne pas casser le frontend).
 
 ---
 
 ## 🛠️ Contribution / développement
-- Respecter les tests unitaires (voir `backend/*/tests.py`).
-- Pour les modifications ASGI/WebSocket, vérifier `backend/realtime/consumers.py` et `routing.py`.
+- Structure du backend : `backend-node/src/modules/<domaine>/*.routes.ts` (un module par app Django d'origine).
+- Schéma de données : `backend-node/prisma/schema.prisma`.
+- Pour les modifications realtime, voir `backend-node/src/realtime/socket.ts`.
 
 ---
-
-Si vous voulez, je peux :
-1) Générer un fichier Postman / OpenAPI (Swagger) listant tous les endpoints. ✅
-2) Ajouter des exemples de payload détaillés pour chaque endpoint. ✅
-
-Dites-moi quelle option vous préférez. 
