@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto'
 import { z } from 'zod'
 import prisma from '../../lib/prisma'
 import { asyncHandler } from '../../utils/asyncHandler'
-import { authenticate, requireAdmin } from '../../middleware/auth'
+import { authenticate, requireAdmin, requireChauffeur } from '../../middleware/auth'
 import { haversine } from '../../utils/haversine'
 import { estimatePrice, NoPricingRuleError, resolvePromoCode, InvalidPromoCodeError } from '../pricing/pricing.service'
 import { broadcastToDrivers, broadcastToTrip } from '../../realtime/socket'
@@ -266,6 +266,32 @@ router.get(
       include: { driver: { include: { user: true, vehicle: true } }, rating: true },
     })
     return res.json(trips.map(toTrip))
+  }),
+)
+
+// ---------- GET /driver-history/ (chauffeur) ----------
+// The driver-side equivalent of /my/ above — every trip this chauffeur has ever driven,
+// newest first, with the passenger's identity attached (the client's /my/ never needs this
+// since a passenger trivially knows who they are).
+
+router.get(
+  '/driver-history/',
+  authenticate,
+  requireChauffeur,
+  asyncHandler(async (req, res) => {
+    const chauffeur = await prisma.chauffeur.findUnique({ where: { userId: req.user!.id } })
+    if (!chauffeur) return res.status(400).json({ detail: 'No chauffeur profile' })
+    const trips = await prisma.trip.findMany({
+      where: { driverId: chauffeur.id },
+      orderBy: { createdAt: 'desc' },
+      include: { driver: { include: { user: true, vehicle: true } }, passenger: true, rating: true },
+    })
+    return res.json(
+      trips.map((t) => ({
+        ...toTrip(t),
+        passenger_detail: t.passenger ? { id: t.passenger.id, username: t.passenger.username, phone: t.passenger.phone } : null,
+      })),
+    )
   }),
 )
 
@@ -808,6 +834,35 @@ router.post(
     const pk = parseInt(req.params.pk, 10)
     const trip = await requireOwnTripAsPassenger(req, res, pk)
     if (!trip) return
+
+    const parsed = sosSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json(parsed.error.flatten())
+
+    const alert = await prisma.sosAlert.create({
+      data: {
+        tripId: pk,
+        passengerId: req.user!.id,
+        latitude: parsed.data.lat,
+        longitude: parsed.data.lng,
+      },
+    })
+    return res.status(201).json({ id: alert.id, created_at: alert.createdAt })
+  }),
+)
+
+// ---------- POST /:pk/sos/driver/ (chauffeur) ----------
+// Same discreet alert, triggered by the driver instead of the passenger. Reuses SosAlert as-is
+// (the "passengerId" column just means "who raised it" — nothing prevents it being the driver's
+// own user id) rather than adding a parallel table for what's otherwise an identical record.
+
+router.post(
+  '/:pk/sos/driver/',
+  authenticate,
+  requireChauffeur,
+  asyncHandler(async (req, res) => {
+    const pk = parseInt(req.params.pk, 10)
+    const owned = await requireOwnTrip(req, res, pk)
+    if (!owned) return
 
     const parsed = sosSchema.safeParse(req.body)
     if (!parsed.success) return res.status(400).json(parsed.error.flatten())
