@@ -151,7 +151,6 @@ export async function createTrip(payload: {
   payment_method?: string
   scheduled_at?: string
   promo_code?: string
-  use_loyalty_reward?: boolean
 }) {
   return api.post('/trips/create/', payload)
 }
@@ -250,16 +249,16 @@ export async function estimatePrice(payload: { distance_km: number; vehicle_type
   return api.post('/pricing/estimate/', payload)
 }
 
-export async function validatePromoCode(code: string) {
-  return api.post('/pricing/validate-code/', { code })
-}
-
 export async function getMyClientProfile() {
   return api.get('/clients/profile/')
 }
 
-export async function getLoyaltyStatus() {
-  return api.get('/trips/loyalty/')
+export async function getRewardsStatus() {
+  return api.get('/trips/rewards/')
+}
+
+export async function saveDiscountCode(code: string) {
+  return api.post('/clients/promo-code/', { code })
 }
 
 export async function setChauffeurAvailability(is_available: boolean) {

@@ -1,27 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Socket } from 'socket.io-client'
 import DriverMap from '../Map/DriverMap'
-import {
-  getAvailableChauffeurs,
-  getMyTrips,
-  createTrip,
-  makePayment,
-  getTransactions,
-  estimatePrice,
-  cancelTrip,
-  getTrip,
-  updateTripVehicleType,
-  updateTripPaymentMethod,
-  rateTrip,
-  skipTripRating,
-  getChauffeurRatingSummary,
-  shareTrip,
-  triggerSos,
-  validatePromoCode,
-  getLoyaltyStatus,
-} from '../../lib/api'
+import { getAvailableChauffeurs, getMyTrips, createTrip, makePayment, getTransactions, estimatePrice, cancelTrip, getTrip, updateTripVehicleType, updateTripPaymentMethod, rateTrip, skipTripRating, getChauffeurRatingSummary, shareTrip, triggerSos, getRewardsStatus, getMyClientProfile } from '../../lib/api'
 import PaymentModal from '../../components/PaymentModal'
 import TripDetailModal from '../../components/TripDetailModal'
+import CheckpointCelebrationModal from '../../components/CheckpointCelebrationModal'
 import { useToasts } from '../../components/Toasts'
 import { useAuth } from '../../context/AuthContext'
 import Card from '../../components/ui/Card'
@@ -31,7 +14,6 @@ import Skeleton from '../../components/ui/Skeleton'
 import RideStatusBar, { type ActiveTrip } from '../../components/RideStatusBar'
 import { getRoute, type Route } from '../../lib/routing'
 import { haversineKm } from '../../lib/geo'
-import { reverseGeocode } from '../../lib/geocode'
 import { useGeolocation } from '../../lib/useGeolocation'
 import { connectTripSocket, connectDriversSocket } from '../../lib/socket'
 import { addRecent } from '../../lib/favorites'
@@ -78,11 +60,18 @@ export default function ClientDashboard() {
   const [paymentMethod, setPaymentMethod] = useState('CASH')
   const [scheduleEnabled, setScheduleEnabled] = useState(false)
   const [scheduledAtInput, setScheduledAtInput] = useState('')
-  const [promoCodeInput, setPromoCodeInput] = useState('')
-  const [promoChecking, setPromoChecking] = useState(false)
-  const [promoResult, setPromoResult] = useState<{ valid: boolean; discount_pct?: number; detail?: string } | null>(null)
-  const [loyalty, setLoyalty] = useState<{ completed_trips: number; threshold: number; progress: number; available: number } | null>(null)
-  const [useLoyaltyReward, setUseLoyaltyReward] = useState(false)
+  const [rewards, setRewards] = useState<{
+    total_distance_km: number
+    last_checkpoint_km: number
+    next_checkpoint_km: number
+    pending_discount: { pct: number; label: string } | null
+    history: { km: number; discount_pct: number | null; created_at: string }[]
+  } | null>(null)
+  const [celebratingCheckpoints, setCelebratingCheckpoints] = useState<{ km: number; discount_pct: number | null }[] | null>(null)
+  // Entirely separate from the gift discount above — a manually saved promo/referral code
+  // (Account.tsx). Both auto-apply to the next trip (gift takes priority, see trips.routes.ts),
+  // combined here only for a single"here's your discount"banner on the booking card.
+  const [pendingPromo, setPendingPromo] = useState<{ code: string; pct: number } | null>(null)
 
   const [activeTrip, setActiveTrip] = useState<ActiveTrip | null>(null)
   const [completedTrip, setCompletedTrip] = useState<ActiveTrip | null>(null)
@@ -100,9 +89,15 @@ export default function ClientDashboard() {
   // it can be reported both by the direct REST response and by the trip socket broadcast.
   const terminalHandledTripIdRef = useRef<number | null>(null)
 
-  const refreshLoyalty = () => {
-    getLoyaltyStatus()
-      .then((r) => setLoyalty(r.data))
+  const refreshRewards = () => {
+    getRewardsStatus()
+      .then((r) => setRewards(r.data))
+      .catch(() => {})
+  }
+
+  const refreshPromo = () => {
+    getMyClientProfile()
+      .then((r) => setPendingPromo(r.data.pending_promo_code ? { code: r.data.pending_promo_code, pct: r.data.pending_promo_discount_pct } : null))
       .catch(() => {})
   }
 
@@ -121,7 +116,8 @@ export default function ClientDashboard() {
       } finally {
         setTripsLoading(false)
       }
-      refreshLoyalty()
+      refreshRewards()
+      refreshPromo()
     }
     load()
   }, [])
@@ -142,6 +138,10 @@ export default function ClientDashboard() {
           if (r.data.status === 'COMPLETED') {
             setCompletedTrip(r.data)
             await refreshCompletedTripPayment(r.data.id)
+            refreshRewards()
+            if (Array.isArray(data.checkpoints) && data.checkpoints.length > 0) {
+              setCelebratingCheckpoints(data.checkpoints)
+            }
           } else {
             setCompletedTrip(null)
             setCompletedTripPayment(null)
@@ -176,7 +176,7 @@ export default function ClientDashboard() {
   }, [activeTrip?.id])
 
   // Once a driver is assigned, track their live position (broadcast on the same public
-  // 'drivers' channel the map uses) and turn it into a real road-route ETA — to the pickup
+  //'drivers'channel the map uses) and turn it into a real road-route ETA — to the pickup
   // point while they're still on their way to us, then to the destination once we're on board.
   // Throttled: recomputing on every ~4s position ping would hammer the OSRM demo server for a
   // number that barely changes second to second.
@@ -187,14 +187,7 @@ export default function ClientDashboard() {
       setDriverEtaMin(null)
       return
     }
-    const target =
-      status === 'STARTED'
-        ? activeTrip!.dest_lat != null && activeTrip!.dest_lng != null
-          ? { lat: activeTrip!.dest_lat, lng: activeTrip!.dest_lng }
-          : null
-        : activeTrip!.origin_lat != null && activeTrip!.origin_lng != null
-          ? { lat: activeTrip!.origin_lat, lng: activeTrip!.origin_lng }
-          : null
+    const target = status === 'STARTED' ? (activeTrip!.dest_lat != null && activeTrip!.dest_lng != null ? { lat: activeTrip!.dest_lat, lng: activeTrip!.dest_lng } : null) : activeTrip!.origin_lat != null && activeTrip!.origin_lng != null ? { lat: activeTrip!.origin_lat, lng: activeTrip!.origin_lng } : null
     if (!target) return
 
     const socket = connectDriversSocket()
@@ -273,21 +266,6 @@ export default function ClientDashboard() {
     }
   }, [originPoint, destinationPoint, vehicleType, stopPoints, stopsReady])
 
-  const handleCheckPromoCode = async () => {
-    const code = promoCodeInput.trim()
-    if (!code) return
-    setPromoChecking(true)
-    setPromoResult(null)
-    try {
-      const r = await validatePromoCode(code)
-      setPromoResult(r.data)
-    } catch (e: any) {
-      setPromoResult({ valid: false, detail: e?.response?.data?.detail || 'Erreur de vérification' })
-    } finally {
-      setPromoChecking(false)
-    }
-  }
-
   const MAX_STOPS = 2
 
   const addStop = () => {
@@ -295,10 +273,8 @@ export default function ClientDashboard() {
     setStops((prev) => [...prev, { id: `${Date.now()}-${Math.random()}`, text: '', point: null }])
   }
   const removeStop = (id: string) => setStops((prev) => prev.filter((s) => s.id !== id))
-  const stopTextChange = (id: string, text: string) =>
-    setStops((prev) => prev.map((s) => (s.id === id ? { ...s, text, point: text ? s.point : null } : s)))
-  const stopSelect = (id: string, r: { label: string; lat: number; lng: number }) =>
-    setStops((prev) => prev.map((s) => (s.id === id ? { ...s, text: r.label, point: { lat: r.lat, lng: r.lng } } : s)))
+  const stopTextChange = (id: string, text: string) => setStops((prev) => prev.map((s) => (s.id === id ? { ...s, text, point: text ? s.point : null } : s)))
+  const stopSelect = (id: string, r: { label: string; lat: number; lng: number }) => setStops((prev) => prev.map((s) => (s.id === id ? { ...s, text: r.label, point: { lat: r.lat, lng: r.lng } } : s)))
 
   // Clears the origin/destination form + map trace — only once a trip is truly over
   // (cancelled or completed), not right after submission, so the route stays drawn
@@ -311,13 +287,10 @@ export default function ClientDashboard() {
     setStops([])
     setScheduleEnabled(false)
     setScheduledAtInput('')
-    setPromoCodeInput('')
-    setPromoResult(null)
-    setUseLoyaltyReward(false)
   }
 
   // Looks up the most recent transaction the passenger created for a given trip, so the
-  // "Payer cette course" button can reflect whether one is already pending/failed/paid.
+  //"Payer cette course"button can reflect whether one is already pending/failed/paid.
   const refreshCompletedTripPayment = async (tripId: number) => {
     try {
       const t = await getTransactions()
@@ -350,9 +323,9 @@ export default function ClientDashboard() {
 
   const scheduledDate = scheduledAtInput ? new Date(scheduledAtInput) : null
   // Scheduling requires a price estimate up front — the deposit is a cut of it — so a
-  // scheduled request additionally needs `estimate` to be resolved, unlike an immediate one.
+  // scheduled request additionally needs`estimate`to be resolved, unlike an immediate one.
   const scheduleReady = !scheduleEnabled || (!!scheduledDate && scheduledDate.getTime() > Date.now() && !!estimate)
-  const canRequest = !!originPoint && !!destinationPoint && stopsReady && scheduleReady && (!useLoyaltyReward || !!estimate) && !submitting
+  const canRequest = !!originPoint && !!destinationPoint && stopsReady && scheduleReady && !submitting
 
   const requestTrip = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -373,29 +346,23 @@ export default function ClientDashboard() {
         distance_km: estimate?.distanceKm,
         payment_method: paymentMethod,
         scheduled_at: scheduleEnabled ? scheduledDate!.toISOString() : undefined,
-        promo_code: !useLoyaltyReward && promoResult?.valid ? promoCodeInput.trim() : undefined,
-        use_loyalty_reward: useLoyaltyReward || undefined,
       })
       const trip = resp.data
       setActiveTrip(trip)
       setCompletedTrip(null)
       setCompletedTripPayment(null)
       addRecent({ label: destinationText, lat: destinationPoint!.lat, lng: destinationPoint!.lng })
-      const discountNote = useLoyaltyReward ? ' (course gratuite — fidélité)' : trip.discount_amount ? ` (code promo : -${trip.discount_amount} XOF)` : ''
+      const discountNote = trip.discount_amount ? `(code promo : -${trip.discount_amount} XOF)` : ''
       addToast({
-        message: trip.status === 'SCHEDULED'
-          ? `Course programmée pour ${new Date(trip.scheduled_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} — acompte de ${trip.deposit_amount} XOF réglé (simulé).`
-          : trip.price
-            ? `Course créée — estimation ${trip.price} XOF${discountNote} (${trip.distance_km?.toFixed?.(1) ?? '—'} km). En attente d'un chauffeur.`
-            : "Course créée. En attente d'un chauffeur.",
+        message: trip.status === 'SCHEDULED' ? `Course programmée pour ${new Date(trip.scheduled_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} — acompte de ${trip.deposit_amount} XOF réglé (simulé).` : trip.price ? `Course créée — estimation ${trip.price} XOF${discountNote} (${trip.distance_km?.toFixed?.(1) ?? '—'} km). En attente d'un chauffeur.` : "Course créée. En attente d'un chauffeur.",
         tone: 'success',
       })
       setScheduleEnabled(false)
       setScheduledAtInput('')
-      setPromoCodeInput('')
-      setPromoResult(null)
-      if (useLoyaltyReward) refreshLoyalty()
-      setUseLoyaltyReward(false)
+      if (trip.discount_amount) {
+        refreshRewards()
+        refreshPromo()
+      }
       const t = await getMyTrips()
       setTrips(t.data)
       const r = await getAvailableChauffeurs()
@@ -433,7 +400,7 @@ export default function ClientDashboard() {
     setTrips((list) => list.map((t) => (t.id === tripId ? { ...t, rating } : t)))
   }
 
-  // Rating the trip that's currently occupying the "completed" card is the last step of its
+  // Rating the trip that's currently occupying the"completed"card is the last step of its
   // lifecycle (request → ride → pay → rate) — once done, hand the dashboard back to idle.
   // Rating an older trip from the history modal, on the other hand, shouldn't touch it.
   const finishIfActiveCompleted = (tripId: number) => {
@@ -441,7 +408,6 @@ export default function ClientDashboard() {
     setCompletedTrip(null)
     setCompletedTripPayment(null)
     resetRouteForm()
-    refreshLoyalty()
   }
 
   const handleRateTrip = async (trip: ActiveTrip, rating: number, comment?: string) => {
@@ -452,7 +418,7 @@ export default function ClientDashboard() {
       addToast({ message: 'Merci pour votre note !', tone: 'success' })
       finishIfActiveCompleted(trip.id)
     } catch (e: any) {
-      addToast({ message: e?.response?.data?.detail || 'Erreur lors de l\'envoi de la note', tone: 'error' })
+      addToast({ message: e?.response?.data?.detail || "Erreur lors de l'envoi de la note", tone: 'error' })
     } finally {
       setRatingSubmitting(false)
     }
@@ -518,7 +484,7 @@ export default function ClientDashboard() {
     setSosSubmitting(true)
     try {
       await triggerSos(activeTrip.id, myPosition?.lat, myPosition?.lng)
-      addToast({ message: "Alerte envoyée à notre équipe avec votre position.", tone: 'success' })
+      addToast({ message: 'Alerte envoyée à notre équipe avec votre position.', tone: 'success' })
     } catch (e: any) {
       addToast({ message: e?.response?.data?.detail || "Erreur lors de l'envoi de l'alerte — appelez directement les secours.", tone: 'error' })
     } finally {
@@ -555,25 +521,13 @@ export default function ClientDashboard() {
     }
   }
 
-  // Let the passenger tap the map directly to set the destination.
-  const handleMapPick = async (point: Point) => {
-    setDestinationPoint(point)
-    setDestinationText(`Position (${point.lat.toFixed(4)}, ${point.lng.toFixed(4)})`)
-    const label = await reverseGeocode(point.lat, point.lng)
-    if (label) setDestinationText(label)
-  }
+  const mappedDrivers = useMemo(() => drivers.map((d) => ({ lat: d.latitude, lng: d.longitude, driver_id: d.id, phone: d.phone, username: d.username, vehicle: d.vehicle })), [drivers])
 
-  const mappedDrivers = useMemo(
-    () => drivers.map((d) => ({ lat: d.latitude, lng: d.longitude, driver_id: d.id, phone: d.phone, username: d.username, vehicle: d.vehicle })),
-    [drivers],
-  )
+  // What will actually be auto-applied to the next trip — the gift takes priority over a
+  // saved promo code (trips.routes.ts), but each is tracked completely independently.
+  const nextRideDiscount = rewards?.pending_discount ? { pct: rewards.pending_discount.pct, label: rewards.pending_discount.label } : pendingPromo ? { pct: pendingPromo.pct, label: pendingPromo.code } : null
 
-  const historyActiveFilterCount = [
-    historyStatus !== 'ALL',
-    !!historyDateFrom,
-    !!historyDateTo,
-    !!historyMinAmount,
-  ].filter(Boolean).length
+  const historyActiveFilterCount = [historyStatus !== 'ALL', !!historyDateFrom, !!historyDateTo, !!historyMinAmount].filter(Boolean).length
 
   const resetHistoryFilters = () => {
     setHistoryStatus('ALL')
@@ -585,7 +539,7 @@ export default function ClientDashboard() {
   const filteredTrips = useMemo(() => {
     const query = historySearch.trim().toLowerCase()
     const fromTime = historyDateFrom ? new Date(historyDateFrom).getTime() : null
-    // End-of-day so a trip made on the "to" date itself is included.
+    // End-of-day so a trip made on the"to"date itself is included.
     const toTime = historyDateTo ? new Date(historyDateTo).getTime() + 24 * 60 * 60 * 1000 : null
     const minAmountNum = historyMinAmount ? Number(historyMinAmount) : null
 
@@ -624,93 +578,77 @@ export default function ClientDashboard() {
           <Card className="!p-3 transition-shadow duration-300 hover:shadow-floating" padded={false}>
             <div className="flex items-center gap-2 px-2 pt-1 pb-2">
               <MapPinned size={18} className="text-brand-600" />
-              <h2 className="font-semibold text-stone-800 dark:text-stone-100">Carte — chauffeurs à proximité</h2>
+              <h2 className="font-semibold text-stone-800">Carte — chauffeurs à proximité</h2>
             </div>
-            <DriverMap
-              standalone={false}
-              height="60vh"
-              initialDrivers={mappedDrivers}
-              origin={originPoint}
-              destination={destinationPoint}
-              route={route?.path}
-              onMapClick={handleMapPick}
-              mapClickHint="Cliquez sur la carte pour choisir la destination"
-            />
+            <DriverMap standalone={false} height="60vh" initialDrivers={mappedDrivers} origin={originPoint} destination={destinationPoint} stops={stopPoints} route={route?.path} />
           </Card>
         </Reveal>
 
         {/* Booking / ride status card */}
         <Reveal variant="right" delay={100} className="lg:col-span-2">
           <Card className="lg:top-20 transition-shadow duration-300 hover:shadow-floating">
-          <RideStatusBar
-            activeTrip={activeTrip}
-            completedTrip={completedTrip}
-            completedPaymentStatus={completedTripPayment?.status ?? null}
-            onPayCompleted={handlePayCompleted}
-            onRateTrip={handleRateTrip}
-            onSkipRating={handleSkipRating}
-            ratingSubmitting={ratingSubmitting}
-            driverEtaMin={driverEtaMin}
-            driverRating={driverRating}
-            originText={originText}
-            destinationText={destinationText}
-            onOriginChange={(v) => {
-              setOriginText(v)
-              setOriginPoint(null)
-            }}
-            onOriginSelect={(r) => {
-              setOriginText(r.label)
-              setOriginPoint({ lat: r.lat, lng: r.lng })
-            }}
-            onDestinationChange={(v) => {
-              setDestinationText(v)
-              setDestinationPoint(null)
-            }}
-            onDestinationSelect={(r) => {
-              setDestinationText(r.label)
-              setDestinationPoint({ lat: r.lat, lng: r.lng })
-            }}
-            myPosition={myPosition}
-            originPoint={originPoint}
-            stops={stops}
-            onAddStop={addStop}
-            onRemoveStop={removeStop}
-            onStopTextChange={stopTextChange}
-            onStopSelect={stopSelect}
-            maxStops={MAX_STOPS}
-            scheduleEnabled={scheduleEnabled}
-            onScheduleToggle={setScheduleEnabled}
-            scheduledAtInput={scheduledAtInput}
-            onScheduledAtChange={setScheduledAtInput}
-            promoCodeInput={promoCodeInput}
-            onPromoCodeChange={(v) => { setPromoCodeInput(v); setPromoResult(null) }}
-            onCheckPromoCode={handleCheckPromoCode}
-            promoChecking={promoChecking}
-            promoResult={promoResult}
-            loyaltyAvailable={loyalty?.available ?? 0}
-            useLoyaltyReward={useLoyaltyReward}
-            onToggleLoyaltyReward={setUseLoyaltyReward}
-            routeLoading={routeLoading}
-            estimate={estimate}
-            route={route}
-            submitting={submitting}
-            canRequest={canRequest}
-            onSubmit={requestTrip}
-            vehicleType={vehicleType}
-            onVehicleTypeChange={setVehicleType}
-            paymentMethod={paymentMethod}
-            onPaymentMethodChange={setPaymentMethod}
-            onCancel={handleCancelTrip}
-            cancelling={cancelling}
-            onChangeActiveVehicleType={handleChangeActiveVehicleType}
-            changingVehicleType={changingVehicleType}
-            onChangeActivePaymentMethod={handleChangeActivePaymentMethod}
-            changingPaymentMethod={changingPaymentMethod}
-            onShareTrip={handleShareTrip}
-            sharingTrip={sharingTrip}
-            onSos={handleSos}
-            sosSubmitting={sosSubmitting}
-          />
+            <RideStatusBar
+              activeTrip={activeTrip}
+              completedTrip={completedTrip}
+              completedPaymentStatus={completedTripPayment?.status ?? null}
+              onPayCompleted={handlePayCompleted}
+              onRateTrip={handleRateTrip}
+              onSkipRating={handleSkipRating}
+              ratingSubmitting={ratingSubmitting}
+              driverEtaMin={driverEtaMin}
+              driverRating={driverRating}
+              originText={originText}
+              destinationText={destinationText}
+              onOriginChange={(v) => {
+                setOriginText(v)
+                setOriginPoint(null)
+              }}
+              onOriginSelect={(r) => {
+                setOriginText(r.label)
+                setOriginPoint({ lat: r.lat, lng: r.lng })
+              }}
+              onDestinationChange={(v) => {
+                setDestinationText(v)
+                setDestinationPoint(null)
+              }}
+              onDestinationSelect={(r) => {
+                setDestinationText(r.label)
+                setDestinationPoint({ lat: r.lat, lng: r.lng })
+              }}
+              myPosition={myPosition}
+              originPoint={originPoint}
+              stops={stops}
+              onAddStop={addStop}
+              onRemoveStop={removeStop}
+              onStopTextChange={stopTextChange}
+              onStopSelect={stopSelect}
+              maxStops={MAX_STOPS}
+              scheduleEnabled={scheduleEnabled}
+              onScheduleToggle={setScheduleEnabled}
+              scheduledAtInput={scheduledAtInput}
+              onScheduledAtChange={setScheduledAtInput}
+              pendingDiscount={nextRideDiscount}
+              routeLoading={routeLoading}
+              estimate={estimate}
+              route={route}
+              submitting={submitting}
+              canRequest={canRequest}
+              onSubmit={requestTrip}
+              vehicleType={vehicleType}
+              onVehicleTypeChange={setVehicleType}
+              paymentMethod={paymentMethod}
+              onPaymentMethodChange={setPaymentMethod}
+              onCancel={handleCancelTrip}
+              cancelling={cancelling}
+              onChangeActiveVehicleType={handleChangeActiveVehicleType}
+              changingVehicleType={changingVehicleType}
+              onChangeActivePaymentMethod={handleChangeActivePaymentMethod}
+              changingPaymentMethod={changingPaymentMethod}
+              onShareTrip={handleShareTrip}
+              sharingTrip={sharingTrip}
+              onSos={handleSos}
+              sosSubmitting={sosSubmitting}
+            />
           </Card>
         </Reveal>
       </div>
@@ -718,36 +656,19 @@ export default function ClientDashboard() {
       {/* History + payments */}
       <Reveal variant="up" delay={150} className="grid lg:grid-cols-1 gap-6 mt-6">
         <Card padded={false} className="flex flex-col max-h-[60vh] transition-shadow duration-300 hover:shadow-floating">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-stone-100 dark:border-stone-800 shrink-0">
-            <h2 className="font-semibold text-stone-800 dark:text-stone-100">Mes courses</h2>
+          <div className="flex items-center justify-between px-5 py-4 border-b border-stone-100 shrink-0">
+            <h2 className="font-semibold text-stone-800">Mes courses</h2>
             {!tripsLoading && trips.length > 0 && (
-              <span className="text-xs font-medium text-stone-400 dark:text-stone-500">
-                <span className="font-semibold text-stone-600 dark:text-stone-300">{filteredTrips.length}</span>
-                {filteredTrips.length !== trips.length ? ` / ${trips.length}` : ' au total'}
+              <span className="text-xs font-medium text-stone-400">
+                <span className="font-semibold text-stone-600">{filteredTrips.length}</span>
+                {filteredTrips.length !== trips.length ? `/ ${trips.length}` : 'au total'}
               </span>
             )}
           </div>
-          {!tripsLoading && trips.length > 0 && (
-            <TripHistoryFilters
-              search={historySearch}
-              onSearchChange={setHistorySearch}
-              status={historyStatus}
-              onStatusChange={setHistoryStatus}
-              dateFrom={historyDateFrom}
-              onDateFromChange={setHistoryDateFrom}
-              dateTo={historyDateTo}
-              onDateToChange={setHistoryDateTo}
-              minAmount={historyMinAmount}
-              onMinAmountChange={setHistoryMinAmount}
-              open={historyFiltersOpen}
-              onToggleOpen={() => setHistoryFiltersOpen((v) => !v)}
-              activeCount={historyActiveFilterCount}
-              onReset={resetHistoryFilters}
-            />
-          )}
+          {!tripsLoading && trips.length > 0 && <TripHistoryFilters search={historySearch} onSearchChange={setHistorySearch} status={historyStatus} onStatusChange={setHistoryStatus} dateFrom={historyDateFrom} onDateFromChange={setHistoryDateFrom} dateTo={historyDateTo} onDateToChange={setHistoryDateTo} minAmount={historyMinAmount} onMinAmountChange={setHistoryMinAmount} open={historyFiltersOpen} onToggleOpen={() => setHistoryFiltersOpen((v) => !v)} activeCount={historyActiveFilterCount} onReset={resetHistoryFilters} />}
           <div className="overflow-y-auto px-5 flex-1">
             {tripsLoading ? (
-              <ul className="divide-y divide-stone-100 dark:divide-stone-800">
+              <ul className="divide-y divide-stone-100">
                 {[0, 1, 2].map((i) => (
                   <li key={i} className="py-3 flex items-center justify-between gap-3">
                     <div className="min-w-0 flex-1 space-y-2">
@@ -759,52 +680,42 @@ export default function ClientDashboard() {
                 ))}
               </ul>
             ) : trips.length === 0 ? (
-              <div className="flex flex-col items-center text-center py-10 text-stone-400 dark:text-stone-500">
-                <span className="grid place-items-center w-12 h-12 rounded-2xl bg-stone-50 dark:bg-stone-800 mb-3">
+              <div className="flex flex-col items-center text-center py-10 text-stone-400">
+                <span className="grid place-items-center w-12 h-12 rounded-2xl bg-stone-50 mb-3">
                   <Inbox size={22} />
                 </span>
                 <p className="text-sm">Aucune course pour l'instant.</p>
                 <p className="text-xs mt-1 max-w-xs">Votre historique de courses apparaîtra ici dès votre première réservation.</p>
               </div>
             ) : filteredTrips.length === 0 ? (
-              <div className="flex flex-col items-center text-center py-10 text-stone-400 dark:text-stone-500">
-                <span className="grid place-items-center w-12 h-12 rounded-2xl bg-stone-50 dark:bg-stone-800 mb-3">
+              <div className="flex flex-col items-center text-center py-10 text-stone-400">
+                <span className="grid place-items-center w-12 h-12 rounded-2xl bg-stone-50 mb-3">
                   <SearchX size={22} />
                 </span>
                 <p className="text-sm">Aucune course ne correspond à ces filtres.</p>
-                <button type="button" onClick={resetHistoryFilters} className="text-xs font-medium text-brand-600 dark:text-brand-400 hover:underline mt-1">
+                <button type="button" onClick={resetHistoryFilters} className="text-xs font-medium text-brand-600 hover:underline mt-1">
                   Réinitialiser les filtres
                 </button>
               </div>
             ) : (
-              <ul className="divide-y divide-stone-100 dark:divide-stone-800">
+              <ul className="divide-y divide-stone-100">
                 {filteredTrips.map((t, i) => (
-                  <li
-                    key={t.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => setDetailTrip(t)}
-                    onKeyDown={(e) => e.key === 'Enter' && setDetailTrip(t)}
-                    className="group py-3 flex items-center justify-between gap-3 animate-fade-in-up transition-colors hover:bg-stone-50 dark:hover:bg-stone-800/60 -mx-2 px-2 rounded-lg cursor-pointer"
-                    style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}
-                  >
+                  <li key={t.id} role="button" tabIndex={0} onClick={() => setDetailTrip(t)} onKeyDown={(e) => e.key === 'Enter' && setDetailTrip(t)} className="group py-3 flex items-center justify-between gap-3 animate-fade-in-up transition-colors hover:bg-stone-50 -mx-2 px-2 rounded-lg cursor-pointer" style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}>
                     <div className="min-w-0 flex items-center gap-2.5">
-                      <span className="grid place-items-center w-8 h-8 rounded-lg bg-stone-50 dark:bg-stone-800 text-stone-400 dark:text-stone-500 shrink-0 transition-colors group-hover:bg-brand-50 dark:group-hover:bg-brand-500/10 group-hover:text-brand-600 dark:group-hover:text-brand-400">
+                      <span className="grid place-items-center w-8 h-8 rounded-lg bg-stone-50 text-stone-400 shrink-0 transition-colors group-hover:bg-brand-50 group-hover:text-brand-600">
                         <ArrowRight size={15} />
                       </span>
                       <div className="min-w-0">
-                        <div className="text-sm font-medium text-stone-800 dark:text-stone-100 truncate">
-                          {t.origin.split(",").slice(0,1).join("")} → {t.destination.split(",").slice(0,1).join("")}
+                        <div className="text-sm font-medium text-stone-800 truncate">
+                          {t.origin.split(',').slice(0, 1).join('')} → {t.destination.split(',').slice(0, 1).join('')}
                         </div>
-                        <div className="text-xs text-stone-400 dark:text-stone-500 mt-0.5">
+                        <div className="text-xs text-stone-400 mt-0.5">
                           {formatDateTime(t.created_at)} · {t.price ? `${t.price} XOF` : 'Prix non estimé'}
                         </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      {t.status === 'COMPLETED' && !t.rating && (
-                        <span className="text-[11px] font-medium text-accent-600 bg-accent-300/15 rounded-full px-2 py-1">À noter</span>
-                      )}
+                      {t.status === 'COMPLETED' && !t.rating && <span className="text-[11px] font-medium text-accent-600 bg-accent-300/15 rounded-full px-2 py-1">À noter</span>}
                       <Badge status={t.status} />
                     </div>
                   </li>
@@ -815,14 +726,9 @@ export default function ClientDashboard() {
         </Card>
       </Reveal>
 
+      <CheckpointCelebrationModal checkpoints={celebratingCheckpoints} onClose={() => setCelebratingCheckpoints(null)} />
       <PaymentModal visible={!!modalTrip} trip={modalTrip} onClose={() => setModalTrip(null)} onConfirm={payForTrip} />
-      <TripDetailModal
-        trip={detailTrip}
-        onClose={() => setDetailTrip(null)}
-        onRate={handleRateTrip}
-        onSkipRating={handleSkipRating}
-        ratingSubmitting={ratingSubmitting}
-      />
+      <TripDetailModal trip={detailTrip} onClose={() => setDetailTrip(null)} onRate={handleRateTrip} onSkipRating={handleSkipRating} ratingSubmitting={ratingSubmitting} />
     </div>
   )
 }

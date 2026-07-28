@@ -3,11 +3,23 @@ import { z } from 'zod'
 import prisma from '../../lib/prisma'
 import { asyncHandler } from '../../utils/asyncHandler'
 import { authenticate, requireAdmin } from '../../middleware/auth'
+import { resolvePromoCode, InvalidPromoCodeError } from '../pricing/pricing.service'
+import { getOrCreateProfile } from './rewards.service'
 
 const router = Router()
 
 function toProfile(p: any) {
-  return { id: p.id, user: p.userId, photo: p.photo, is_active: p.isActive, language: p.language, referral_code: p.referralCode, created_at: p.createdAt }
+  return {
+    id: p.id,
+    user: p.userId,
+    photo: p.photo,
+    is_active: p.isActive,
+    language: p.language,
+    referral_code: p.referralCode,
+    created_at: p.createdAt,
+    pending_promo_code: p.pendingPromoCode,
+    pending_promo_discount_pct: p.pendingPromoDiscountPct,
+  }
 }
 
 // Deterministic from userId (already unique) — no collision handling ever needed.
@@ -77,6 +89,45 @@ router.patch(
     }
     const profile = await prisma.clientProfile.update({ where: { userId: req.user!.id }, data: d })
     return res.json(toProfile(profile))
+  }),
+)
+
+// ---------- POST /promo-code/ (current user) ----------
+// Le code promo n'est plus saisi à chaque course : il est enregistré une fois ici et
+// s'applique automatiquement à la prochaine course (trips.routes.ts POST /create/), qui le
+// consomme et vide ce slot. Totalement indépendant des cadeaux de progression km
+// (rewards.service.ts, pendingGiftDiscountPct) — enregistrer un code ici ne les affecte jamais.
+// Pas de "retirer" : entrer un nouveau code remplace simplement l'ancien.
+
+const promoCodeSchema = z.object({ code: z.string().min(1) })
+
+router.post(
+  '/promo-code/',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const parsed = promoCodeSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json(parsed.error.flatten())
+
+    let resolved
+    try {
+      resolved = await resolvePromoCode(parsed.data.code, req.user!.id)
+    } catch (e) {
+      if (e instanceof InvalidPromoCodeError) return res.json({ valid: false, detail: e.message })
+      throw e
+    }
+
+    const profile = await getOrCreateProfile(req.user!.id)
+    const code = parsed.data.code.trim().toUpperCase()
+    await prisma.clientProfile.update({
+      where: { id: profile.id },
+      data: {
+        pendingPromoCode: code,
+        pendingPromoDiscountPct: resolved.discountPct,
+        pendingPromoId: resolved.kind === 'PROMO' ? resolved.promo!.id : null,
+      },
+    })
+
+    return res.json({ valid: true, discount_pct: resolved.discountPct })
   }),
 )
 
