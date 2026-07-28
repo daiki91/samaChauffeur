@@ -12,6 +12,7 @@ import { MapPinned, Wallet, Power, Route as RouteIcon, MoonStar, Navigation, Use
 import type { Socket } from 'socket.io-client'
 import { connectDriverSocket, connectTripSocket } from '../../lib/socket'
 import { haversineKm } from '../../lib/geo'
+import { useAuth } from '../../context/AuthContext'
 
 const PAYMENT_LABELS: Record<string, string> = { CASH: 'Espèces', ORANGE: 'Orange Money', WAVE: 'Wave', FREE: 'Free Money', CARD: 'Carte' }
 
@@ -19,12 +20,13 @@ const PAYMENT_LABELS: Record<string, string> = { CASH: 'Espèces', ORANGE: 'Oran
 // a claim outside this radius is rejected server-side regardless, this just avoids a round-trip.
 const MAX_CLAIM_RADIUS_KM = 5
 
-const DRIVER_ONLINE_KEY = 'driver_online'
-
 export default function DriverDashboard() {
   const [trips, setTrips] = useState<any[]>([])
   const [pendingPayments, setPendingPayments] = useState<any[]>([])
-  const [online, setOnline] = useState(() => localStorage.getItem(DRIVER_ONLINE_KEY) === 'true')
+  // Online/offline (and the localStorage persistence + POST /availability/ sync) now lives in
+  // AuthContext — it's what lets the chauffeur's position feed run on any page, not just this
+  // one, and defaults to online (going offline is the explicit, exceptional action).
+  const { driverOnline: online, setDriverOnline } = useAuth()
   const [toggling, setToggling] = useState(false)
   const socketRef = useRef<Socket | null>(null)
   const tripSocketRef = useRef<Socket | null>(null)
@@ -58,12 +60,16 @@ export default function DriverDashboard() {
         const a = await getMyActiveTrip()
         if (a.data) {
           setActiveTrip(a.data)
-          setOnline(true)
-          localStorage.setItem(DRIVER_ONLINE_KEY, 'true')
+          if (!online) {
+            try {
+              await setDriverOnline(true)
+            } catch (e) {}
+          }
         }
       } catch (e) {}
-      // If localStorage says we were online, sync that with the server
-      if (localStorage.getItem(DRIVER_ONLINE_KEY) === 'true') {
+      // Re-affirm availability with the server on mount (covers e.g. a page reload) whenever
+      // we're supposed to be online — matches the "online by default" flag owned by AuthContext.
+      if (online) {
         try {
           await setChauffeurAvailability(true)
         } catch (e) {}
@@ -173,9 +179,7 @@ export default function DriverDashboard() {
     setToggling(true)
     const next = !online
     try {
-      await setChauffeurAvailability(next)
-      setOnline(next)
-      localStorage.setItem(DRIVER_ONLINE_KEY, String(next))
+      await setDriverOnline(next)
       addToast({ message: next ? 'Vous êtes en ligne' : 'Vous êtes hors ligne', tone: next ? 'success' : 'info' })
     } catch (e: any) {
       addToast({ message: e?.response?.data?.detail || 'Impossible de changer de statut', tone: 'error' })
@@ -347,8 +351,7 @@ export default function DriverDashboard() {
               route={route?.path}
               onSocketError={(msg) => {
                 addToast({ message: msg, tone: 'error' })
-                setOnline(false)
-                localStorage.setItem(DRIVER_ONLINE_KEY, 'false')
+                setDriverOnline(false).catch(() => {})
               }}
             />
           ) : (

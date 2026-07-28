@@ -79,8 +79,13 @@ router.post(
       vehicleId = vehicle.id
     }
 
+    // isAvailable defaults to true (mirrors the Prisma schema default): being offline is meant
+    // to be an explicit, exceptional action the chauffeur takes from their dashboard, not the
+    // starting state of a new profile. isVerified stays false until an admin approves them —
+    // note the driver socket (/ws/realtime/driver) already gates on isVerified regardless, so an
+    // unverified-but-"available" chauffeur still won't broadcast a live position or get matched.
     const chauffeur = await prisma.chauffeur.create({
-      data: { userId, vehicleId, isVerified: false, isAvailable: false },
+      data: { userId, vehicleId, isVerified: false, isAvailable: true },
       include: { vehicle: true },
     })
     await prisma.user.update({ where: { id: userId }, data: { role: 'CHAUFFEUR' } })
