@@ -42,4 +42,44 @@ export async function downloadDriverReport(from: string, to: string) {
   return api.get('/chauffeurs/stats/report.pdf', { params: { from, to }, responseType: 'blob' })
 }
 
-export default { getAvailableTrips, claimTrip, getMyActiveTrip, acceptTrip, arriveTrip, startTrip, endTrip, getDriverStats, downloadDriverReport }
+/** Lifetime earnings vs. already-claimed payouts — what's left the driver can withdraw. */
+export async function getEarningsSummary() {
+  return api.get('/payments/earnings/summary/')
+}
+
+/** The driver's own payout/withdrawal history. */
+export async function getMyPayouts() {
+  return api.get('/payments/payouts/me/')
+}
+
+/** Request a withdrawal of up to the available balance — starts out SCHEDULED until an admin processes it. */
+export async function requestPayout(amount: number, method?: string) {
+  return api.post('/payments/payouts/request/', { amount, method })
+}
+
+/** Every trip this driver has ever driven, newest first. */
+export async function getDriverHistory() {
+  return api.get('/trips/driver-history/')
+}
+
+/** Discreet in-ride SOS, triggered by the driver instead of the passenger. */
+export async function triggerDriverSos(tripId: number, lat?: number, lng?: number) {
+  return api.post(`/trips/${tripId}/sos/driver/`, { lat, lng })
+}
+
+export default {
+  getAvailableTrips,
+  claimTrip,
+  getMyActiveTrip,
+  acceptTrip,
+  arriveTrip,
+  startTrip,
+  endTrip,
+  getDriverStats,
+  downloadDriverReport,
+  getEarningsSummary,
+  getMyPayouts,
+  requestPayout,
+  getDriverHistory,
+  triggerDriverSos,
+}

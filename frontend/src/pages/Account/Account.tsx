@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Phone, UserRound, ShieldCheck, PhoneCall, Trash2, X, Lock, Pencil, Check, Languages, Camera, Gift, Copy, Tag } from 'lucide-react'
+import { ArrowLeft, Phone, UserRound, ShieldCheck, PhoneCall, Trash2, X, Lock, Pencil, Check, Languages, Camera, Gift, Copy, Tag, Car, Star } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
-import { deleteAccount, updateMe, getMyChauffeurProfile, updateChauffeurPhoto, getMyClientProfile, saveDiscountCode } from '../../lib/api'
+import { deleteAccount, updateMe, getMyChauffeurProfile, updateChauffeurPhoto, getMyClientProfile, saveDiscountCode, getChauffeurRatingSummary } from '../../lib/api'
 import { useToasts } from '../../components/Toasts'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
@@ -10,6 +10,8 @@ import Spinner from '../../components/ui/Spinner'
 import Reveal from '../../components/ui/Reveal'
 
 const ROLE_LABELS: Record<string, string> = { CLIENT: 'Passager', CHAUFFEUR: 'Chauffeur', ADMIN: 'Admin' }
+
+const VEHICLE_LABELS: Record<string, string> = { CAR: 'Voiture', SEDAN: 'Berline', SUV: '4x4', MINIBUS: 'Minibus', BUS: 'Bus' }
 
 const LANGUAGE_OPTIONS = [
   { value: 'fr', label: 'Français' },
@@ -39,10 +41,19 @@ export default function Account() {
   const [promoError, setPromoError] = useState<string | null>(null)
   const [savingPromo, setSavingPromo] = useState(false)
 
+  const [rating, setRating] = useState<{ average: number | null; count: number } | null>(null)
+  const [vehicle, setVehicle] = useState<{ type: string; seats: number; plate_number: string } | null>(null)
+
   useEffect(() => {
     if (user?.role !== 'CHAUFFEUR') return
     getMyChauffeurProfile()
-      .then((res) => setDriverPhoto(res.data.photo || null))
+      .then((res) => {
+        setDriverPhoto(res.data.photo || null)
+        setVehicle(res.data.vehicle || null)
+        getChauffeurRatingSummary(res.data.id)
+          .then((r) => setRating(r.data))
+          .catch(() => {})
+      })
       .catch(() => {})
   }, [user?.role])
 
@@ -328,10 +339,18 @@ export default function Account() {
       {user.role === 'CHAUFFEUR' && (
         <Reveal variant="up" delay={110}>
           <Card className="mb-6 transition-shadow duration-300 hover:shadow-floating">
-            <h2 className="font-semibold text-stone-800 mb-1 flex items-center gap-2">
-              <Camera size={16} className="text-brand-600" />
-              Photo de profil
-            </h2>
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="font-semibold text-stone-800 flex items-center gap-2">
+                <Camera size={16} className="text-brand-600" />
+                Photo de profil
+              </h2>
+              {rating && rating.count > 0 && (
+                <span className="inline-flex items-center gap-1 bg-accent-300/15 text-accent-700 rounded-full px-2.5 py-1 text-xs font-semibold">
+                  <Star size={12} fill="currentColor" />
+                  {rating.average} ({rating.count})
+                </span>
+              )}
+            </div>
             <p className="text-xs text-stone-500 mb-3">Affichée aux passagers dès qu'un trajet vous est attribué.</p>
             <div className="flex items-center gap-4">
               {driverPhoto ? (
@@ -345,6 +364,31 @@ export default function Account() {
               <Button variant="outline" size="sm" loading={uploadingPhoto} onClick={handlePhotoPick} icon={<Camera size={14} />}>
                 {driverPhoto ? 'Changer la photo' : 'Ajouter une photo'}
               </Button>
+            </div>
+          </Card>
+        </Reveal>
+      )}
+
+      {user.role === 'CHAUFFEUR' && (
+        <Reveal variant="up" delay={125}>
+          <Card className="mb-6 transition-shadow duration-300 hover:shadow-floating">
+            <h2 className="font-semibold text-stone-800 mb-1 flex items-center gap-2">
+              <Car size={16} className="text-brand-600" />
+              Mon véhicule
+            </h2>
+            <p className="text-xs text-stone-500 mb-3">Vérifié par notre équipe — contactez le support pour toute correction.</p>
+
+            <div className="rounded-xl border border-stone-100 bg-stone-50 px-4 py-3">
+              {vehicle ? (
+                <>
+                  <div className="text-sm font-medium text-stone-800">
+                    {VEHICLE_LABELS[vehicle.type] || vehicle.type} · {vehicle.seats} places
+                  </div>
+                  <div className="text-xs text-stone-500 mt-0.5 font-mono">{vehicle.plate_number}</div>
+                </>
+              ) : (
+                <div className="text-sm text-stone-400">Aucun véhicule renseigné</div>
+              )}
             </div>
           </Card>
         </Reveal>

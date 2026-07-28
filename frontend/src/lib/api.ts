@@ -255,6 +255,14 @@ export async function getPaymentsSummary() {
   return api.get('/payments/summary/')
 }
 
+export async function getAdminPayouts() {
+  return api.get('/payments/payouts/')
+}
+
+export async function updatePayoutStatus(id: number, status: 'SCHEDULED' | 'PROCESSED' | 'FAILED') {
+  return api.patch(`/payments/payouts/${id}/`, { status })
+}
+
 export async function applyChauffeur(vehicle: { type: string; seats: number; plate_number: string }) {
   return api.post('/chauffeurs/apply/', { vehicle })
 }
@@ -297,6 +305,10 @@ export async function updateChauffeurPhoto(photo: string | null) {
 
 export async function getMyChauffeurProfile() {
   return api.get('/chauffeurs/me/')
+}
+
+export async function updateChauffeurDocuments(permit: string | null, insurance: string | null) {
+  return api.post('/chauffeurs/documents/', { permit, insurance })
 }
 
 export default api

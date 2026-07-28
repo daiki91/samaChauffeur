@@ -36,6 +36,7 @@ export type ActiveTrip = {
     photo?: string | null
     vehicle: { type: string; plate_number: string; seats: number } | null
   } | null
+  passenger_detail?: { id: number; username?: string; phone?: string } | null
   rating: { id: number; rating: number; comment: string | null; skipped: boolean; created_at: string } | null
 }
 

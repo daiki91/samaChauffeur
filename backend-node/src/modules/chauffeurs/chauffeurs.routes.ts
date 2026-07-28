@@ -23,6 +23,8 @@ function toChauffeur(c: any) {
     is_verified: c.isVerified,
     is_available: c.isAvailable,
     photo: c.photo,
+    permit: c.permit,
+    insurance: c.insurance,
   }
 }
 
@@ -355,6 +357,35 @@ router.post(
       data: { photo: parsed.data.photo },
       include: { vehicle: true },
     })
+    return res.json(toChauffeur(updated))
+  }),
+)
+
+// ---------- POST /documents/ (chauffeur — permit + insurance) ----------
+// Second, more detailed onboarding step (see ChauffeurOnboard) — kept separate from /apply/ so
+// the initial signup stays a 2-field form and this heavier one only comes right after.
+
+const documentsSchema = z.object({
+  permit: z.string().min(1).nullable().optional(),
+  insurance: z.string().min(1).nullable().optional(),
+})
+
+router.post(
+  '/documents/',
+  authenticate,
+  requireChauffeur,
+  asyncHandler(async (req, res) => {
+    const parsed = documentsSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json(parsed.error.flatten())
+
+    const chauffeur = await prisma.chauffeur.findUnique({ where: { userId: req.user!.id } })
+    if (!chauffeur) return res.status(400).json({ detail: 'No chauffeur profile' })
+
+    const data: any = {}
+    if ('permit' in parsed.data) data.permit = parsed.data.permit
+    if ('insurance' in parsed.data) data.insurance = parsed.data.insurance
+
+    const updated = await prisma.chauffeur.update({ where: { id: chauffeur.id }, data, include: { vehicle: true } })
     return res.json(toChauffeur(updated))
   }),
 )
