@@ -14,6 +14,8 @@ import Account from './pages/Account/Account'
 import DriverDashboard from './pages/Driver/DriverDashboard'
 import DriverStats from './pages/Driver/DriverStats'
 import AdminOverview from './pages/Admin/AdminOverview'
+import AdminUsers from './pages/Admin/AdminUsers'
+import AdminMap from './pages/Admin/AdminMap'
 import Home from './pages/Home/Home'
 import SharedTrip from './pages/Share/SharedTrip'
 import RequireClient from './components/RequireClient'
@@ -127,6 +129,22 @@ const router = createBrowserRouter(
           element: (
             <RequireAdmin>
               <AdminOverview />
+            </RequireAdmin>
+          ),
+        },
+        {
+          path: 'admin/users',
+          element: (
+            <RequireAdmin>
+              <AdminUsers />
+            </RequireAdmin>
+          ),
+        },
+        {
+          path: 'admin/map',
+          element: (
+            <RequireAdmin>
+              <AdminMap />
             </RequireAdmin>
           ),
         },

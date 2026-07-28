@@ -43,12 +43,24 @@ export async function getUsers() {
   return api.get('/auth/users/')
 }
 
+export async function createUser(payload: { username: string; phone: string; password: string; role?: string; language?: string }) {
+  return api.post('/auth/users/', payload)
+}
+
 export async function getAdminChauffeurs() {
   return api.get('/chauffeurs/admin/chauffeurs/')
 }
 
 export async function getAdminVehicles() {
   return api.get('/chauffeurs/vehicles/')
+}
+
+export async function updateAdminChauffeur(id: number, payload: { is_verified?: boolean; is_available?: boolean; vehicle?: number | null }) {
+  return api.patch(`/chauffeurs/admin/chauffeurs/${id}/`, payload)
+}
+
+export async function deleteAdminChauffeur(id: number) {
+  return api.delete(`/chauffeurs/admin/chauffeurs/${id}/`)
 }
 
 /** Average rating + review count for a chauffeur — shown to the passenger before the ride. */
@@ -58,6 +70,16 @@ export async function getChauffeurRatingSummary(id: number) {
 
 export async function getAdminTrips(limit = 200) {
   return api.get(`/trips/admin/all/?limit=${limit}`)
+}
+
+/** Reports the current user's device position — feeds the admin "last known location" map. */
+export async function updateMyLocation(lat: number, lng: number) {
+  return api.post('/auth/location/', { lat, lng })
+}
+
+/** Admin — every client/chauffeur with a known position: live if connected, last seen otherwise. */
+export async function getUserLocations() {
+  return api.get('/auth/users/locations/')
 }
 
 // Response interceptor to auto-refresh token on 401

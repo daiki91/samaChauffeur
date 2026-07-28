@@ -91,6 +91,14 @@ model User {
   dateJoined    DateTime @default(now()) @map("date_joined")
   lastSeenAt    DateTime? @map("last_seen_at")
 
+  // Last known device position — for CLIENT and CHAUFFEUR alike. Updated either from the
+  // realtime presence socket ('location.update') while connected, or from the periodic
+  // POST /auth/location/ fallback. Powers the admin "where is everyone" map: live position
+  // while online, this last snapshot once the user disconnects.
+  lastLatitude   Float?    @map("last_latitude")
+  lastLongitude  Float?    @map("last_longitude")
+  lastLocationAt DateTime? @map("last_location_at")
+
   chauffeur      Chauffeur?
   clientProfile  ClientProfile?
   trips          Trip[]          @relation("PassengerTrips")

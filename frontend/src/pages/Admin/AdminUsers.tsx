@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Socket } from 'socket.io-client'
-import { getUsers } from '../../lib/api'
+import { getUsers, createUser } from '../../lib/api'
 import { connectPresenceSocket } from '../../lib/socket'
 import Card from '../../components/ui/Card'
 import Badge from '../../components/ui/Badge'
 import Spinner from '../../components/ui/Spinner'
-import { Users } from 'lucide-react'
+import Button from '../../components/ui/Button'
+import Input from '../../components/ui/Input'
+import { Users, UserPlus, ChevronDown } from 'lucide-react'
+import AdminNav from '../../components/admin/AdminNav'
 
 type AdminUser = {
   id: number
@@ -95,8 +98,34 @@ export default function AdminUsers() {
 
   const onlineCount = useMemo(() => users.filter((u) => u.is_online).length, [users])
 
+  const [showCreate, setShowCreate] = useState(false)
+  const [createForm, setCreateForm] = useState({ username: '', phone: '', password: '', role: 'ADMIN' })
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+  const [createSuccess, setCreateSuccess] = useState<string | null>(null)
+
+  const handleCreateChange = (e: any) => setCreateForm({ ...createForm, [e.target.name]: e.target.value })
+
+  const handleCreateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setCreating(true)
+    setCreateError(null)
+    setCreateSuccess(null)
+    try {
+      const res = await createUser(createForm)
+      setUsers((prev) => [...prev, { ...res.data, is_online: false, last_seen_at: null }])
+      setCreateSuccess(`Compte ${roleLabelsFr[createForm.role] || createForm.role} créé pour ${createForm.phone}.`)
+      setCreateForm({ username: '', phone: '', password: '', role: 'ADMIN' })
+    } catch (err: any) {
+      setCreateError(err?.response?.data?.detail || "Impossible de créer ce compte. Vérifiez les informations.")
+    } finally {
+      setCreating(false)
+    }
+  }
+
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
+      <AdminNav />
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-stone-900">Comptes connectés</h1>
@@ -107,6 +136,73 @@ export default function AdminUsers() {
           {onlineCount} en ligne
         </Badge>
       </div>
+
+      <Card className="mb-6">
+        <button
+          type="button"
+          onClick={() => setShowCreate((v) => !v)}
+          className="w-full flex items-center justify-between text-left"
+        >
+          <span className="flex items-center gap-2 font-semibold text-stone-800">
+            <UserPlus size={18} className="text-brand-600" />
+            Ajouter un administrateur
+          </span>
+          <ChevronDown size={18} className={`text-stone-400 transition-transform ${showCreate ? 'rotate-180' : ''}`} />
+        </button>
+
+        {showCreate && (
+          <form onSubmit={handleCreateSubmit} className="mt-4 space-y-4">
+            <div className="grid sm:grid-cols-2 gap-4">
+              <Input
+                label="Nom d'utilisateur"
+                name="username"
+                value={createForm.username}
+                onChange={handleCreateChange}
+                placeholder="ex: admin2"
+                required
+              />
+              <Input
+                label="Téléphone"
+                name="phone"
+                value={createForm.phone}
+                onChange={handleCreateChange}
+                placeholder="+221 77 000 00 00"
+                required
+              />
+              <Input
+                label="Mot de passe"
+                type="password"
+                name="password"
+                value={createForm.password}
+                onChange={handleCreateChange}
+                placeholder="••••••••"
+                required
+              />
+              <div className="w-full">
+                <label htmlFor="role" className="block text-sm font-medium text-stone-700 mb-1.5">
+                  Rôle
+                </label>
+                <select
+                  id="role"
+                  name="role"
+                  value={createForm.role}
+                  onChange={handleCreateChange}
+                  className="w-full rounded-xl border border-stone-200 bg-white px-3.5 py-2.5 text-sm text-stone-900 outline-none transition-shadow focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400"
+                >
+                  <option value="ADMIN">Admin</option>
+                  <option value="CHAUFFEUR">Chauffeur</option>
+                  <option value="CLIENT">Passager</option>
+                </select>
+              </div>
+            </div>
+            {createError && <div className="rounded-lg bg-red-50 text-red-700 text-sm px-3 py-2">{createError}</div>}
+            {createSuccess && <div className="rounded-lg bg-secondary-50 text-secondary-700 text-sm px-3 py-2">{createSuccess}</div>}
+            <Button type="submit" loading={creating}>
+              Créer le compte
+            </Button>
+          </form>
+        )}
+      </Card>
 
       <Card padded={false} className="flex flex-col max-h-[60vh] overflow-hidden">
         <div className="flex items-center gap-2 px-5 pt-4 pb-2">

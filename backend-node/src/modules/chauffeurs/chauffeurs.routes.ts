@@ -155,6 +155,65 @@ router.post(
   }),
 )
 
+// ---------- PATCH/DELETE /admin/chauffeurs/:id/ (admin) ----------
+// Gives the admin real management actions on a driver: (un)verify, suspend/reactivate
+// (is_available — also used to gate the client-facing /available/ search), reassign
+// vehicle, or fully revoke chauffeur status (demotes the account back to CLIENT).
+
+const adminChauffeurUpdateSchema = z.object({
+  vehicle: z.number().int().nullable().optional(),
+  is_verified: z.boolean().optional(),
+  is_available: z.boolean().optional(),
+})
+
+router.patch(
+  '/admin/chauffeurs/:id/',
+  authenticate,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10)
+    if (Number.isNaN(id)) return res.status(400).json({ detail: 'Invalid chauffeur id' })
+
+    const parsed = adminChauffeurUpdateSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json(parsed.error.flatten())
+    const data = parsed.data
+
+    const existing = await prisma.chauffeur.findUnique({ where: { id } })
+    if (!existing) return res.status(404).json({ detail: 'Not found' })
+
+    const chauffeur = await prisma.chauffeur.update({
+      where: { id },
+      data: {
+        ...(data.vehicle !== undefined ? { vehicleId: data.vehicle } : {}),
+        ...(data.is_verified !== undefined ? { isVerified: data.is_verified } : {}),
+        ...(data.is_available !== undefined ? { isAvailable: data.is_available } : {}),
+      },
+      include: { vehicle: true, user: true },
+    })
+    return res.json(toChauffeurAdmin(chauffeur))
+  }),
+)
+
+router.delete(
+  '/admin/chauffeurs/:id/',
+  authenticate,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10)
+    if (Number.isNaN(id)) return res.status(400).json({ detail: 'Invalid chauffeur id' })
+
+    const existing = await prisma.chauffeur.findUnique({ where: { id } })
+    if (!existing) return res.status(404).json({ detail: 'Not found' })
+
+    await prisma.chauffeur.delete({ where: { id } })
+    // Demote the underlying account back to CLIENT rather than deleting it — they keep
+    // login access, they just lose chauffeur privileges until they re-apply.
+    await prisma.user.update({ where: { id: existing.userId }, data: { role: 'CLIENT' } })
+
+    return res.status(204).end()
+  }),
+)
+
 // ---------- GET /available/?lat&lng&radius (client) ----------
 
 router.get(

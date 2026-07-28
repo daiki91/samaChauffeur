@@ -112,6 +112,19 @@ export function initRealtime(server: HttpServer) {
         // unknown chauffeur id — ignore, mirrors Chauffeur.DoesNotExist handling
       }
       void maybeRecordLocationPing(driverId, latN, lngN)
+      // Mirror onto User.last{Latitude,Longitude,LocationAt} too, so this chauffeur shows up
+      // on the admin "all users" map (GET /api/auth/users/locations/) the same way a client does,
+      // and push it live to any admin with that map open (see presenceNsp 'location.update' below).
+      void presence.updateLocation(user.id, latN, lngN)
+      presenceNsp.to('admins').emit('message', {
+        type: 'presence.location',
+        user_id: user.id,
+        username: user.username,
+        phone: user.phone,
+        role: user.role,
+        lat: latN,
+        lng: lngN,
+      })
 
       const msg = { type: 'broadcast.location', driver_id: driverId, lat: latN, lng: lngN }
       driverNsp.to('drivers').emit('message', msg)
@@ -182,6 +195,27 @@ export function initRealtime(server: HttpServer) {
       phone: user.phone,
       role: user.role,
       online: true,
+    })
+
+    // Any authenticated user (client or chauffeur) can report its device position here —
+    // this is what puts a live dot on the admin map (GET /api/auth/users/locations/ +
+    // 'presence.location' broadcast below) instead of just the one-off pickup/dropoff
+    // coordinates captured at booking time. Emitted by frontend/src/components/LocationReporter.tsx.
+    socket.on('location.update', async (content: { lat?: number; lng?: number }) => {
+      const { lat, lng } = content
+      if (!isValidCoordinate(lat, lng)) return
+      const latN = Number(lat)
+      const lngN = Number(lng)
+      await presence.updateLocation(user.id, latN, lngN)
+      presenceNsp.to('admins').emit('message', {
+        type: 'presence.location',
+        user_id: user.id,
+        username: user.username,
+        phone: user.phone,
+        role: user.role,
+        lat: latN,
+        lng: lngN,
+      })
     })
 
     socket.on('disconnect', async () => {
