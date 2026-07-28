@@ -318,16 +318,42 @@ model ClientProfile {
   // handling needed — redeeming a friend's code gives a flat discount on your first request.
   referralCode String? @unique @map("referral_code")
 
-  // Programme de fidélité: free rides earned are derived from COMPLETED trip count
-  // (LOYALTY_THRESHOLD in trips.routes.ts) minus this counter, so it only tracks redemptions.
-  loyaltyRedeemed Int @default(0) @map("loyalty_redeemed")
+  // Code promo/parrainage enregistré depuis le profil — indépendant des cadeaux de progression
+  // ci-dessous. Consommé et vidé automatiquement à la prochaine course créée
+  // (trips.routes.ts POST /create/). Remplacé (jamais "retiré") en enregistrant un autre code.
+  pendingPromoCode        String? @map("pending_promo_code")
+  pendingPromoDiscountPct Int?    @map("pending_promo_discount_pct")
+  pendingPromoId          Int?    @map("pending_promo_id")
 
-  supportTickets SupportTicket[]
-  transactions   Transaction[]
-  paymentMethods PaymentMethod[]
-  tickets        Ticket[]
+  // Cadeaux basés sur les km parcourus: total cumulé + progression vers le prochain checkpoint
+  // (l'écart entre checkpoints est aléatoire et croissant, voir rewards.service.ts). La réduction
+  // gagnée à un checkpoint est un slot totalement distinct du code promo ci-dessus — les deux
+  // n'ont aucun rapport, elle est juste elle aussi consommée automatiquement à la prochaine course.
+  pendingGiftDiscountPct Int?  @map("pending_gift_discount_pct")
+  totalDistanceKm        Float @default(0) @map("total_distance_km")
+  lastCheckpointKm       Float @default(0) @map("last_checkpoint_km")
+  nextCheckpointKm       Float @default(1) @map("next_checkpoint_km")
+
+  supportTickets    SupportTicket[]
+  transactions      Transaction[]
+  paymentMethods    PaymentMethod[]
+  tickets           Ticket[]
+  checkpointRewards CheckpointReward[]
 
   @@map("client_profiles")
+}
+
+// Historique des checkpoints de distance atteints par un client — chacun peut octroyer une
+// réduction (discountPct renseigné) ou non (null), tirage au sort fait dans rewards.service.ts.
+model CheckpointReward {
+  id          Int           @id @default(autoincrement())
+  clientId    Int           @map("client_id")
+  client      ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  km          Float
+  discountPct Int?          @map("discount_pct")
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  @@map("checkpoint_rewards")
 }
 
 model SupportTicket {

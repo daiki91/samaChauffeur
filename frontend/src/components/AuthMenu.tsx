@@ -1,10 +1,20 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { Car, LogOut, LayoutDashboard, BarChart3 } from 'lucide-react'
+import { Car, LogOut, LayoutDashboard, BarChart3, Gift } from 'lucide-react'
 import Button from './ui/Button'
+import { getRewardsStatus } from '../lib/api'
 
 export default function AuthMenu() {
   const { user, loading, logout } = useAuth()
+  const [hasPendingReward, setHasPendingReward] = useState(false)
+
+  useEffect(() => {
+    if (user?.role !== 'CLIENT') return
+    getRewardsStatus()
+      .then((r) => setHasPendingReward(!!r.data?.pending_discount))
+      .catch(() => {})
+  }, [user?.role])
 
   if (loading) return <div className="text-sm text-stone-400">...</div>
 
@@ -40,6 +50,18 @@ export default function AuthMenu() {
         <Link to="/admin" className="hidden sm:inline-flex items-center gap-1.5 text-sm font-medium text-stone-600 hover:text-brand-600">
           <LayoutDashboard size={15} />
           Vue d'ensemble
+        </Link>
+      )}
+
+      {user.role === 'CLIENT' && (
+        <Link to="/rewards" title="Cadeaux de route" className="relative grid place-items-center w-9 h-9 rounded-full text-stone-500 hover:text-brand-600 hover:bg-brand-50 transition-colors">
+          <Gift size={18} />
+          {hasPendingReward && (
+            <span className="absolute top-1.5 right-1.5 flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-secondary-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-secondary-500" />
+            </span>
+          )}
         </Link>
       )}
 
