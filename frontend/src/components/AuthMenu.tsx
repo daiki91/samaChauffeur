@@ -1,20 +1,14 @@
-import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useRewards } from '../context/RewardsContext'
 import { Car, LogOut, LayoutDashboard, BarChart3, Gift } from 'lucide-react'
 import Button from './ui/Button'
-import { getRewardsStatus } from '../lib/api'
+import { getInitials } from '../lib/format'
 
 export default function AuthMenu() {
   const { user, loading, logout } = useAuth()
-  const [hasPendingReward, setHasPendingReward] = useState(false)
-
-  useEffect(() => {
-    if (user?.role !== 'CLIENT') return
-    getRewardsStatus()
-      .then((r) => setHasPendingReward(!!r.data?.pending_discount))
-      .catch(() => {})
-  }, [user?.role])
+  const { status: rewardsStatus } = useRewards()
+  const hasPendingReward = user?.role === 'CLIENT' && !!rewardsStatus?.pending_discount
 
   if (loading) return <div className="text-sm text-stone-400">...</div>
 
@@ -54,10 +48,15 @@ export default function AuthMenu() {
       )}
 
       {user.role === 'CLIENT' && (
-        <Link to="/rewards" title="Cadeaux de route" className="relative grid place-items-center w-9 h-9 rounded-full text-stone-500 hover:text-brand-600 hover:bg-brand-50 transition-colors">
+        <Link
+          to="/rewards"
+          title="Cadeaux de route"
+          aria-label={hasPendingReward ? 'Cadeaux de route — une réduction vous attend' : 'Cadeaux de route'}
+          className="relative grid place-items-center w-9 h-9 rounded-full text-stone-500 hover:text-brand-600 hover:bg-brand-50 transition-colors"
+        >
           <Gift size={18} />
           {hasPendingReward && (
-            <span className="absolute top-1.5 right-1.5 flex h-2 w-2">
+            <span className="absolute top-1.5 right-1.5 flex h-2 w-2 animate-fade-in-up">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-secondary-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-2 w-2 bg-secondary-500" />
             </span>
@@ -68,7 +67,7 @@ export default function AuthMenu() {
       <div className="flex items-center gap-2 pl-3 border-l border-stone-200">
         <Link to="/account" className="flex items-center gap-2 rounded-lg hover:bg-stone-50 transition-colors -m-1 p-1">
           <span className="grid place-items-center w-8 h-8 rounded-full bg-brand-100 text-brand-700 font-semibold text-xs uppercase">
-            {user.username?.slice(0, 2)}
+            {getInitials(user.username)}
           </span>
           <div className="hidden sm:block text-sm leading-tight">
             <div className="font-medium text-stone-800">{user.username}</div>
@@ -78,6 +77,7 @@ export default function AuthMenu() {
         <button
           onClick={logout}
           title="Déconnexion"
+          aria-label="Déconnexion"
           className="ml-1 grid place-items-center w-8 h-8 rounded-full text-stone-400 hover:text-red-600 hover:bg-red-50 transition-colors"
         >
           <LogOut size={16} />

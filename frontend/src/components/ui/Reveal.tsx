@@ -25,7 +25,7 @@ export default function Reveal({ children, className = '', delay = 0, as = 'div'
     const node = ref.current
     if (!node) return
 
-    if (typeof IntersectionObserver === 'undefined') {
+    if (typeof IntersectionObserver === 'undefined' || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
       setVisible(true)
       return
     }

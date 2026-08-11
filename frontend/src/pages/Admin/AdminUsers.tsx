@@ -7,8 +7,8 @@ import Badge from '../../components/ui/Badge'
 import Spinner from '../../components/ui/Spinner'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
-import { Users, UserPlus, ChevronDown } from 'lucide-react'
-import AdminNav from '../../components/admin/AdminNav'
+import AdminPageHeader from '../../components/admin/AdminPageHeader'
+import { Users, UserPlus, ChevronDown, Search } from 'lucide-react'
 
 type AdminUser = {
   id: number
@@ -98,6 +98,13 @@ export default function AdminUsers() {
 
   const onlineCount = useMemo(() => users.filter((u) => u.is_online).length, [users])
 
+  const [query, setQuery] = useState('')
+  const filteredUsers = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return users
+    return users.filter((u) => u.username.toLowerCase().includes(q) || u.phone.toLowerCase().includes(q))
+  }, [users, query])
+
   const [showCreate, setShowCreate] = useState(false)
   const [createForm, setCreateForm] = useState({ username: '', phone: '', password: '', role: 'ADMIN' })
   const [creating, setCreating] = useState(false)
@@ -124,18 +131,17 @@ export default function AdminUsers() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
-      <AdminNav />
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-stone-900">Comptes connectés</h1>
-          <p className="text-stone-500 text-sm">Qui est en ligne maintenant, en temps réel.</p>
-        </div>
-        <Badge>
-          <span className="live-dot !w-2.5 !h-2.5 mr-1.5" />
-          {onlineCount} en ligne
-        </Badge>
-      </div>
+    <div className="max-w-5xl mx-auto">
+      <AdminPageHeader
+        title="Comptes connectés"
+        description="Qui est en ligne maintenant, en temps réel."
+        action={
+          <Badge>
+            <span className="live-dot !w-2.5 !h-2.5 mr-1.5" />
+            {onlineCount} en ligne
+          </Badge>
+        }
+      />
 
       <Card className="mb-6">
         <button
@@ -204,18 +210,19 @@ export default function AdminUsers() {
         )}
       </Card>
 
-      <Card padded={false} className="flex flex-col max-h-[60vh] overflow-hidden">
+      <Card padded={false} className="flex flex-col max-h-[70vh] overflow-hidden">
         <div className="flex items-center gap-2 px-5 pt-4 pb-2">
           <Users size={18} className="text-brand-600" />
-          <h2 className="font-semibold text-stone-800">Utilisateurs</h2>
+          <h2 className="font-semibold text-stone-800 flex-1">Utilisateurs</h2>
+          <Input icon={<Search size={14} />} placeholder="Rechercher…" value={query} onChange={(e) => setQuery(e.target.value)} className="!py-1.5 max-w-[200px]" />
         </div>
 
         {loading ? (
           <div className="flex-1 min-h-0 overflow-y-auto py-16 grid place-items-center">
             <Spinner size={28} />
           </div>
-        ) : users.length === 0 ? (
-          <p className="flex-1 min-h-0 overflow-y-auto text-sm text-stone-400 py-10 text-center">Aucun utilisateur.</p>
+        ) : filteredUsers.length === 0 ? (
+          <p className="flex-1 min-h-0 overflow-y-auto text-sm text-stone-400 py-10 text-center">{query ? 'Aucun résultat.' : 'Aucun utilisateur.'}</p>
         ) : (
           <div className="flex-1 min-h-0 overflow-auto">
             <table className="w-full text-sm">
@@ -228,7 +235,7 @@ export default function AdminUsers() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100">
-                {users.map((u) => (
+                {filteredUsers.map((u) => (
                   <tr key={u.id}>
                     <td className="px-5 py-3">
                       {u.is_online ? (

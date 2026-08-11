@@ -45,10 +45,15 @@ export default function Footer() {
             Le covoiturage et le transport privé, réinventés pour aller plus vite, plus loin, en toute confiance.
           </p>
           <div className="flex items-center gap-3">
-            {[Facebook, Instagram, Twitter].map((Icon, i) => (
+            {[
+              { Icon: Facebook, label: 'Facebook' },
+              { Icon: Instagram, label: 'Instagram' },
+              { Icon: Twitter, label: 'Twitter' },
+            ].map(({ Icon, label }) => (
               <a
-                key={i}
+                key={label}
                 href="#"
+                aria-label={label}
                 className="grid place-items-center w-9 h-9 rounded-full bg-white/5 hover:bg-brand-500 hover:text-white transition-colors duration-200"
               >
                 <Icon size={16} />
@@ -61,13 +66,20 @@ export default function Footer() {
           <div key={col.title}>
             <h4 className="text-white font-semibold text-sm mb-4">{col.title}</h4>
             <ul className="space-y-2.5 text-sm">
-              {col.links.map((l) => (
-                <li key={l.label}>
-                  <Link to={l.to} className="hover:text-white transition-colors duration-200">
+              {col.links.map((l) =>
+                l.to === '#' ? (
+                  // Not a real destination yet — shown as plain text rather than a dead link.
+                  <li key={l.label} className="text-stone-600 cursor-default">
                     {l.label}
-                  </Link>
-                </li>
-              ))}
+                  </li>
+                ) : (
+                  <li key={l.label}>
+                    <Link to={l.to} className="hover:text-white transition-colors duration-200">
+                      {l.label}
+                    </Link>
+                  </li>
+                ),
+              )}
             </ul>
           </div>
         ))}

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Car, Flag } from 'lucide-react'
 
 type Props = {
   totalDistanceKm: number
@@ -38,30 +39,34 @@ export default function RewardsProgress({ totalDistanceKm, lastCheckpointKm, nex
 
   const height = compact ? 100 : 140
 
+  const progressLabel =
+    remainingKm < 0.05
+      ? 'Checkpoint atteint !'
+      : `Progression vers le prochain cadeau : encore ${remainingKm.toFixed(1)} kilomètres, sur ${span.toFixed(1)} au total.`
+
   return (
     <div className="w-full">
-      <svg viewBox={`0 0 470 ${height}`} className="w-full overflow-visible" style={{ height }}>
+      <svg viewBox={`0 0 470 ${height}`} className="w-full overflow-visible" style={{ height }} role="img" aria-label={progressLabel}>
         <path d={ROAD_PATH} fill="none" strokeWidth={10} strokeLinecap="round" className="stroke-stone-200" />
         <path ref={roadRef} d={ROAD_PATH} fill="none" strokeWidth={10} strokeLinecap="round" className="stroke-brand-400 animate-road-draw" style={pathLength ? ({ '--road-length': pathLength, strokeDasharray: pathLength } as React.CSSProperties) : undefined} />
-        <path d={ROAD_PATH} fill="none" stroke="white" strokeOpacity={0.5} strokeWidth={2} strokeDasharray="5 9" className="" />
+        <path d={ROAD_PATH} fill="none" stroke="white" strokeOpacity={0.5} strokeWidth={2} strokeDasharray="5 9" />
 
         <circle cx={10} cy={65} r={7} className="fill-secondary-500" />
 
-        <g transform="translate(460, 65)" className="animate-checkpoint-pop">
-          <circle r={11} strokeWidth={2} className="fill-white stroke-brand-400" />
-          <text x={0} y={5} textAnchor="middle" fontSize={13}>
-            🚩
-          </text>
+        <g transform="translate(449, 54)" className="animate-checkpoint-pop">
+          <circle cx={11} cy={11} r={14} strokeWidth={2} className="fill-white stroke-brand-400" />
+          <Flag x={4} y={4} width={14} height={14} className="stroke-brand-500" strokeWidth={2.5} />
         </g>
-        <text x={468} y={69} fontSize={16} className="fill-stone-300">
-          ⋯
-        </text>
+        <circle cx={468} cy={65} r={2} className="fill-stone-300" />
+        <circle cx={462} cy={65} r={2} className="fill-stone-300" />
+        <circle cx={456} cy={65} r={2} className="fill-stone-200" />
 
         {carPoint && (
-          <g transform={`translate(${carPoint.x}, ${carPoint.y})`} style={{ transition: 'transform 0.9s cubic-bezier(0.22, 1, 0.36, 1)' }}>
-            <text x={0} y={7} textAnchor="middle" fontSize={22}>
-              🚗
-            </text>
+          <g
+            transform={`translate(${carPoint.x - 12}, ${carPoint.y - 12})`}
+            style={{ transition: 'transform 0.9s cubic-bezier(0.22, 1, 0.36, 1)' }}
+          >
+            <Car width={24} height={24} className="fill-white stroke-brand-600" strokeWidth={2} />
           </g>
         )}
       </svg>

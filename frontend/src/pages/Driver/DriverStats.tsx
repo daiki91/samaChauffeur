@@ -4,9 +4,9 @@ import { useToasts } from '../../components/Toasts'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
-import Spinner from '../../components/ui/Spinner'
 import Reveal from '../../components/ui/Reveal'
 import AnimatedNumber from '../../components/ui/AnimatedNumber'
+import Skeleton from '../../components/ui/Skeleton'
 import MiniBarChart from '../../components/admin/MiniBarChart'
 import { BarChart3, Route as RouteIcon, Wallet, CheckCircle2, TrendingUp, Download, ChevronLeft, ChevronRight, ArrowDownToLine, Landmark, Inbox } from 'lucide-react'
 
@@ -263,17 +263,17 @@ export default function DriverStats() {
               type="button"
               onClick={() => setAnchor((a) => shiftAnchor(preset, a, -1))}
               title="Période précédente"
-              className="grid place-items-center w-7 h-7 rounded-lg text-stone-500 hover:bg-stone-100 hover:text-stone-800 transition-colors"
+              className="grid place-items-center w-7 h-7 rounded-lg text-stone-500 hover:bg-stone-100 hover:text-stone-800 transition-colors shrink-0"
             >
               <ChevronLeft size={16} />
             </button>
-            <p className="text-sm font-medium text-stone-700 min-w-[220px]">{formatPeriodLabel(preset, from, to)}</p>
+            <p className="text-sm font-medium text-stone-700 flex-1 min-w-0 truncate text-center sm:text-left">{formatPeriodLabel(preset, from, to)}</p>
             <button
               type="button"
               disabled={!canGoNext}
               onClick={() => setAnchor((a) => shiftAnchor(preset, a, 1))}
               title="Période suivante"
-              className="grid place-items-center w-7 h-7 rounded-lg text-stone-500 hover:bg-stone-100 hover:text-stone-800 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+              className="grid place-items-center w-7 h-7 rounded-lg text-stone-500 hover:bg-stone-100 hover:text-stone-800 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed shrink-0"
             >
               <ChevronRight size={16} />
             </button>
@@ -308,92 +308,20 @@ export default function DriverStats() {
       </Card>
       </Reveal>
 
-      <Reveal variant="up" delay={100}>
-      <Card className="mb-6 transition-shadow duration-300 hover:shadow-floating">
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <h2 className="font-semibold text-stone-800 flex items-center gap-2">
-            <Landmark size={16} className="text-brand-600" />
-            Mes gains
-          </h2>
-          <Button size="sm" variant="outline" icon={<ArrowDownToLine size={14} />} disabled={!earnings || earnings.available_balance <= 0} onClick={() => setPayoutFormOpen((v) => !v)}>
-            Demander un retrait
-          </Button>
-        </div>
-
-        <div className="grid sm:grid-cols-3 gap-3 mb-1">
-          <div className="rounded-xl bg-stone-50 border border-stone-100 px-4 py-3 transition-transform duration-200 hover:scale-[1.02]">
-            <div className="text-xs text-stone-500 mb-1">Solde disponible</div>
-            <div className="text-lg font-bold text-secondary-700">
-              <AnimatedNumber value={earnings?.available_balance ?? 0} format={(n) => n.toLocaleString('fr-FR')} /> XOF
-            </div>
-          </div>
-          <div className="rounded-xl bg-stone-50 border border-stone-100 px-4 py-3 transition-transform duration-200 hover:scale-[1.02]">
-            <div className="text-xs text-stone-500 mb-1">Total gagné (à vie)</div>
-            <div className="text-lg font-bold text-stone-900">
-              <AnimatedNumber value={earnings?.total_earnings ?? 0} format={(n) => n.toLocaleString('fr-FR')} /> XOF
-            </div>
-          </div>
-          <div className="rounded-xl bg-stone-50 border border-stone-100 px-4 py-3 transition-transform duration-200 hover:scale-[1.02]">
-            <div className="text-xs text-stone-500 mb-1">Déjà retiré</div>
-            <div className="text-lg font-bold text-stone-900">
-              <AnimatedNumber value={earnings?.total_paid_out ?? 0} format={(n) => n.toLocaleString('fr-FR')} /> XOF
-            </div>
-          </div>
-        </div>
-
-        {payoutFormOpen && (
-          <form onSubmit={handleRequestPayout} className="mt-4 flex items-end gap-2">
-            <div className="flex-1">
-              <Input
-                label="Montant à retirer (XOF)"
-                type="number"
-                min={1}
-                max={earnings?.available_balance ?? undefined}
-                value={payoutAmount}
-                onChange={(e) => setPayoutAmount(e.target.value)}
-                placeholder={`Max ${(earnings?.available_balance ?? 0).toLocaleString('fr-FR')}`}
-                autoFocus
-              />
-            </div>
-            <Button type="submit" loading={requestingPayout} disabled={!payoutAmount || Number(payoutAmount) <= 0}>
-              Envoyer
-            </Button>
-          </form>
-        )}
-
-        <div className="mt-5">
-          <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-2">Historique des retraits</h3>
-          {payouts.length === 0 ? (
-            <div className="flex flex-col items-center text-center py-6 text-stone-400">
-              <span className="grid place-items-center w-10 h-10 rounded-2xl bg-stone-50 mb-2">
-                <Inbox size={18} />
-              </span>
-              <p className="text-sm">Aucune demande de retrait pour l'instant.</p>
-            </div>
-          ) : (
-            <ul className="divide-y divide-stone-100">
-              {payouts.map((p, i) => (
-                <li key={p.id} className="py-2.5 flex items-center justify-between gap-3 animate-fade-in-up" style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}>
-                  <div className="text-sm text-stone-700">
-                    {p.amount.toLocaleString('fr-FR')} XOF
-                    <span className="text-xs text-stone-400 ml-2">{p.processed_at ? new Date(p.processed_at).toLocaleDateString('fr-FR') : p.scheduled_at ? new Date(p.scheduled_at).toLocaleDateString('fr-FR') : ''}</span>
-                  </div>
-                  <span className={`text-xs font-semibold rounded-full px-2.5 py-1 ${PAYOUT_STATUS[p.status].className}`}>{PAYOUT_STATUS[p.status].label}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </Card>
-      </Reveal>
-
+      {/* Period-scoped stats — everything here reacts to the selector above */}
       {loading ? (
-        <div className="py-16 grid place-items-center">
-          <Spinner size={28} />
-        </div>
+        <Reveal variant="up" delay={100}>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            {[0, 1, 2, 3].map((i) => (
+              <Card key={i} className="!p-4 space-y-2">
+                <Skeleton className="h-3 w-2/3" />
+                <Skeleton className="h-6 w-1/2" />
+              </Card>
+            ))}
+          </div>
+        </Reveal>
       ) : (
-        <>
-          <Reveal variant="up" delay={140}>
+        <Reveal variant="up" delay={100}>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <Card className="!p-4 transition-all duration-300 hover:shadow-floating hover:-translate-y-0.5">
               <div className="flex items-center gap-2 text-xs text-stone-500 mb-1.5">
@@ -432,22 +360,111 @@ export default function DriverStats() {
               </div>
             </Card>
           </div>
-          </Reveal>
-
-          <Reveal variant="up" delay={180}>
-          <Card className="mb-6 transition-shadow duration-300 hover:shadow-floating">
-            <h2 className="font-semibold text-stone-800 mb-3">Répartition des gains</h2>
-            <MiniBarChart data={(stats?.breakdown ?? []).map((b) => ({ label: b.label, value: b.earnings }))} />
-          </Card>
-          </Reveal>
-
-          <Reveal variant="up" delay={220}>
-          <Button icon={<Download size={16} />} loading={downloading} onClick={handleDownloadPdf}>
-            Télécharger le bilan (PDF)
-          </Button>
-          </Reveal>
-        </>
+        </Reveal>
       )}
+
+      <Reveal variant="up" delay={140}>
+        <Card className="mb-6 transition-shadow duration-300 hover:shadow-floating">
+          <h2 className="font-semibold text-stone-800 mb-3">Répartition des gains</h2>
+          {loading ? <Skeleton className="h-32 w-full" /> : <MiniBarChart data={(stats?.breakdown ?? []).map((b) => ({ label: b.label, value: b.earnings }))} />}
+        </Card>
+      </Reveal>
+
+      <Reveal variant="up" delay={180}>
+        <Button icon={<Download size={16} />} loading={downloading} onClick={handleDownloadPdf} disabled={loading}>
+          Télécharger le bilan (PDF)
+        </Button>
+      </Reveal>
+
+      {/* Lifetime earnings + payouts — kept visually separate from the period stats above,
+          since these numbers don't move when the period selector does. */}
+      <div className="flex items-center gap-3 mt-10 mb-4">
+        <div className="h-px flex-1 bg-stone-200" />
+        <span className="text-xs font-semibold text-stone-400 uppercase tracking-wide flex items-center gap-1.5 shrink-0">
+          <Landmark size={13} />
+          Mes gains — toutes périodes
+        </span>
+        <div className="h-px flex-1 bg-stone-200" />
+      </div>
+
+      <Reveal variant="up">
+        <Card className="mb-6 transition-shadow duration-300 hover:shadow-floating">
+          <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+            <h2 className="font-semibold text-stone-800 flex items-center gap-2 shrink-0">
+              <Wallet size={16} className="text-brand-600" />
+              Solde & retraits
+            </h2>
+            <Button size="sm" variant="outline" icon={<ArrowDownToLine size={14} />} disabled={!earnings || earnings.available_balance <= 0} onClick={() => setPayoutFormOpen((v) => !v)} className="whitespace-nowrap">
+              Demander un retrait
+            </Button>
+          </div>
+
+          <div className="grid sm:grid-cols-3 gap-3 mb-1">
+            <div className="rounded-xl bg-stone-50 border border-stone-100 px-4 py-3 transition-transform duration-200 hover:scale-[1.02]">
+              <div className="text-xs text-stone-500 mb-1">Solde disponible</div>
+              <div className="text-lg font-bold text-secondary-700">
+                <AnimatedNumber value={earnings?.available_balance ?? 0} format={(n) => n.toLocaleString('fr-FR')} /> XOF
+              </div>
+            </div>
+            <div className="rounded-xl bg-stone-50 border border-stone-100 px-4 py-3 transition-transform duration-200 hover:scale-[1.02]">
+              <div className="text-xs text-stone-500 mb-1">Total gagné (à vie)</div>
+              <div className="text-lg font-bold text-stone-900">
+                <AnimatedNumber value={earnings?.total_earnings ?? 0} format={(n) => n.toLocaleString('fr-FR')} /> XOF
+              </div>
+            </div>
+            <div className="rounded-xl bg-stone-50 border border-stone-100 px-4 py-3 transition-transform duration-200 hover:scale-[1.02]">
+              <div className="text-xs text-stone-500 mb-1">Déjà retiré</div>
+              <div className="text-lg font-bold text-stone-900">
+                <AnimatedNumber value={earnings?.total_paid_out ?? 0} format={(n) => n.toLocaleString('fr-FR')} /> XOF
+              </div>
+            </div>
+          </div>
+
+          {payoutFormOpen && (
+            <form onSubmit={handleRequestPayout} className="mt-4 flex items-end gap-2 flex-wrap">
+              <div className="flex-1 min-w-[160px]">
+                <Input
+                  label="Montant à retirer (XOF)"
+                  type="number"
+                  min={1}
+                  max={earnings?.available_balance ?? undefined}
+                  value={payoutAmount}
+                  onChange={(e) => setPayoutAmount(e.target.value)}
+                  placeholder={`Max ${(earnings?.available_balance ?? 0).toLocaleString('fr-FR')}`}
+                  autoFocus
+                />
+              </div>
+              <Button type="submit" loading={requestingPayout} disabled={!payoutAmount || Number(payoutAmount) <= 0}>
+                Envoyer
+              </Button>
+            </form>
+          )}
+
+          <div className="mt-5">
+            <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-2">Historique des retraits</h3>
+            {payouts.length === 0 ? (
+              <div className="flex flex-col items-center text-center py-6 text-stone-400">
+                <span className="grid place-items-center w-10 h-10 rounded-2xl bg-stone-50 mb-2">
+                  <Inbox size={18} />
+                </span>
+                <p className="text-sm">Aucune demande de retrait pour l'instant.</p>
+              </div>
+            ) : (
+              <ul className="divide-y divide-stone-100">
+                {payouts.map((p, i) => (
+                  <li key={p.id} className="py-2.5 flex items-center justify-between gap-3 animate-fade-in-up" style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}>
+                    <div className="text-sm text-stone-700">
+                      {p.amount.toLocaleString('fr-FR')} XOF
+                      <span className="text-xs text-stone-400 ml-2">{p.processed_at ? new Date(p.processed_at).toLocaleDateString('fr-FR') : p.scheduled_at ? new Date(p.scheduled_at).toLocaleDateString('fr-FR') : ''}</span>
+                    </div>
+                    <span className={`text-xs font-semibold rounded-full px-2.5 py-1 ${PAYOUT_STATUS[p.status].className}`}>{PAYOUT_STATUS[p.status].label}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </Card>
+      </Reveal>
     </div>
   )
 }

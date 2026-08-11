@@ -73,6 +73,7 @@ export default function DriverDashboard() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const [trips, setTrips] = useState<any[]>([])
+  const [tripsLoading, setTripsLoading] = useState(true)
   const [pendingPayments, setPendingPayments] = useState<any[]>([])
   const [online, setOnline] = useState(() => localStorage.getItem(DRIVER_ONLINE_KEY) === 'true')
   const [toggling, setToggling] = useState(false)
@@ -133,6 +134,16 @@ export default function DriverDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Computed from the already-fetched history rather than a second stats call — keeps this
+  // in sync automatically whenever history refreshes (e.g. right after ending a course).
+  const todayStats = useMemo(() => {
+    const startOfToday = new Date()
+    startOfToday.setHours(0, 0, 0, 0)
+    const startMs = startOfToday.getTime()
+    const todays = history.filter((t) => t.status === 'COMPLETED' && t.ended_at && new Date(t.ended_at).getTime() >= startMs)
+    return { trips: todays.length, earnings: todays.reduce((sum, t) => sum + (t.price ?? 0), 0) }
+  }, [history])
+
   const handleDocsSubmitted = () => {
     setDocsModalOpen(false)
     getMyChauffeurProfile()
@@ -161,7 +172,10 @@ export default function DriverDashboard() {
       try {
         const r = await getAvailableTrips()
         setTrips(r.data)
-      } catch (e) {}
+      } catch (e) {
+      } finally {
+        setTripsLoading(false)
+      }
       await refreshPendingPayments()
       try {
         const a = await getMyActiveTrip()
@@ -495,6 +509,31 @@ export default function DriverDashboard() {
         </div>
       </Reveal>
 
+      {!historyLoading && (
+        <Reveal variant="up" delay={40}>
+          <div className="flex items-center gap-3 mb-6 flex-wrap">
+            <div className="flex items-center gap-2.5 bg-white rounded-xl2 border border-stone-100 shadow-card px-4 py-2.5 transition-shadow duration-300 hover:shadow-floating">
+              <span className="grid place-items-center w-8 h-8 rounded-lg bg-brand-50 text-brand-600 shrink-0">
+                <RouteIcon size={15} />
+              </span>
+              <div>
+                <div className="text-sm font-bold text-stone-900 leading-tight">{todayStats.trips}</div>
+                <div className="text-[11px] text-stone-400">course{todayStats.trips !== 1 ? 's' : ''} aujourd'hui</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2.5 bg-white rounded-xl2 border border-stone-100 shadow-card px-4 py-2.5 transition-shadow duration-300 hover:shadow-floating">
+              <span className="grid place-items-center w-8 h-8 rounded-lg bg-secondary-50 text-secondary-600 shrink-0">
+                <Wallet size={15} />
+              </span>
+              <div>
+                <div className="text-sm font-bold text-stone-900 leading-tight">{todayStats.earnings.toLocaleString('fr-FR')} XOF</div>
+                <div className="text-[11px] text-stone-400">gagnés aujourd'hui</div>
+              </div>
+            </div>
+          </div>
+        </Reveal>
+      )}
+
       {verification && !verification.is_verified && (
         <Reveal variant="up">
           <Card className="mb-6 !py-3.5 border-accent-300/60 bg-accent-300/10">
@@ -670,7 +709,22 @@ export default function DriverDashboard() {
                   </span>
                 )}
               </h2>
-              {nearbyTrips.length === 0 && (
+              {tripsLoading ? (
+                <ul className="space-y-2.5">
+                  {[0, 1].map((i) => (
+                    <li key={i} className="rounded-xl border border-stone-100 p-3 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <Skeleton className="w-8 h-8 rounded-lg shrink-0" />
+                        <div className="min-w-0 flex-1 space-y-1.5">
+                          <Skeleton className="h-4 w-2/3" />
+                          <Skeleton className="h-3 w-1/3" />
+                        </div>
+                      </div>
+                      <Skeleton className="h-8 w-16 rounded-lg shrink-0" />
+                    </li>
+                  ))}
+                </ul>
+              ) : nearbyTrips.length === 0 ? (
                 <div className="flex flex-col items-center text-center py-10 text-stone-400">
                   <span className="grid place-items-center w-12 h-12 rounded-2xl bg-stone-50 mb-3">
                     <RouteIcon size={22} />
@@ -678,7 +732,7 @@ export default function DriverDashboard() {
                   <p className="text-sm">Aucune course en attente pour l'instant.</p>
                   <p className="text-xs mt-1 max-w-xs">Restez en ligne — les nouvelles demandes apparaîtront ici automatiquement.</p>
                 </div>
-              )}
+              ) : (
               <ul className="space-y-2.5">
                 {nearbyTrips.map((t, i) => {
                   const distFromDriver = myPosition && t.origin_lat != null && t.origin_lng != null
@@ -725,6 +779,7 @@ export default function DriverDashboard() {
                   )
                 })}
               </ul>
+              )}
             </>
           )}
         </Card>

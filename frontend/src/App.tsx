@@ -8,12 +8,20 @@ import Login from './pages/Auth/Login'
 import ChauffeurOnboard from './pages/Onboard/Chauffeur'
 import DriverMap from './pages/Map/DriverMap'
 import AuthMenu from './components/AuthMenu'
+import DriverBottomNav from './components/DriverBottomNav'
+import { useAuth } from './context/AuthContext'
 import ClientDashboard from './pages/Dashboard/ClientDashboard'
 import Rewards from './pages/Rewards/Rewards'
 import Account from './pages/Account/Account'
 import DriverDashboard from './pages/Driver/DriverDashboard'
 import DriverStats from './pages/Driver/DriverStats'
+import AdminLayout from './components/admin/AdminLayout'
 import AdminOverview from './pages/Admin/AdminOverview'
+import AdminClients from './pages/Admin/AdminClients'
+import AdminChauffeurs from './pages/Admin/AdminChauffeurs'
+import AdminVehicules from './pages/Admin/AdminVehicules'
+import AdminCourses from './pages/Admin/AdminCourses'
+import AdminRetraits from './pages/Admin/AdminRetraits'
 import AdminUsers from './pages/Admin/AdminUsers'
 import AdminMap from './pages/Admin/AdminMap'
 import Home from './pages/Home/Home'
@@ -26,6 +34,9 @@ import Button from './components/ui/Button'
 import './index.css'
 
 function Layout() {
+  const { user } = useAuth()
+  const isDriver = user?.role === 'CHAUFFEUR'
+
   return (
     <div className="min-h-screen bg-stone-50 transition-colors">
       <nav className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-stone-100">
@@ -42,9 +53,11 @@ function Layout() {
         </div>
       </nav>
 
-      <main>
+      <main className={isDriver ? 'pb-20 sm:pb-0' : ''}>
         <Outlet />
       </main>
+
+      <DriverBottomNav />
     </div>
   )
 }
@@ -128,25 +141,19 @@ const router = createBrowserRouter(
           path: 'admin',
           element: (
             <RequireAdmin>
-              <AdminOverview />
+              <AdminLayout />
             </RequireAdmin>
           ),
-        },
-        {
-          path: 'admin/users',
-          element: (
-            <RequireAdmin>
-              <AdminUsers />
-            </RequireAdmin>
-          ),
-        },
-        {
-          path: 'admin/map',
-          element: (
-            <RequireAdmin>
-              <AdminMap />
-            </RequireAdmin>
-          ),
+          children: [
+            { index: true, element: <AdminOverview /> },
+            { path: 'clients', element: <AdminClients /> },
+            { path: 'chauffeurs', element: <AdminChauffeurs /> },
+            { path: 'vehicules', element: <AdminVehicules /> },
+            { path: 'courses', element: <AdminCourses /> },
+            { path: 'retraits', element: <AdminRetraits /> },
+            { path: 'users', element: <AdminUsers /> },
+            { path: 'map', element: <AdminMap /> },
+          ],
         },
         {
           path: 'account',

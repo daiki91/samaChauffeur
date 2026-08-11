@@ -1,44 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { MapContainer, TileLayer, Marker } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
-import L from 'leaflet'
-import { Car, MapPin, Navigation, ShieldAlert } from 'lucide-react'
+import { Car, MapPin, Navigation, ShieldAlert, WifiOff, RotateCw } from 'lucide-react'
 import { getSharedTrip } from '../../lib/api'
 import Card from '../../components/ui/Card'
 import Badge from '../../components/ui/Badge'
+import Button from '../../components/ui/Button'
 import Spinner from '../../components/ui/Spinner'
-
-delete (L.Icon.Default.prototype as any)._getIconUrl
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-})
-
-const pinIcon = (color: string, label: string) =>
-  L.divIcon({
-    className: '',
-    html: `<div style="background:${color};width:26px;height:26px;border-radius:9999px 9999px 9999px 0;transform:rotate(45deg);border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;">
- <span style="transform:rotate(-45deg);color:white;font-size:11px;font-weight:700;">${label}</span>
- </div>`,
-    iconSize: [26, 26],
-    iconAnchor: [13, 26],
-  })
-
-const carDivIcon = L.divIcon({
-  className: '',
-  html: `<div style="position:relative;width:34px;height:34px;">
- <span class="animate-marker-pulse"style="position:absolute;inset:0;border-radius:9999px;background:#f2590e;"></span>
- <div style="position:relative;width:34px;height:34px;border-radius:9999px;background:#f2590e;border:2.5px solid white;box-shadow:0 3px 10px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;color:white;">
- <svg width="18"height="18"viewBox="0 0 24 24"fill="none"stroke="white"stroke-width="2.3"stroke-linecap="round"stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7"cy="17"r="2"/><path d="M9 17h6"/><circle cx="17"cy="17"r="2"/></svg>
- </div>
- </div>`,
-  iconSize: [34, 34],
-  iconAnchor: [17, 17],
-})
-
-const VEHICLE_LABELS: Record<string, string> = { CAR: 'Voiture', SEDAN: 'Berline', SUV: '4x4', MINIBUS: 'Minibus', BUS: 'Bus rapide' }
+import { originIcon, destinationIcon, carIcon } from '../../lib/mapIcons'
+import { getInitials, VEHICLE_LABELS } from '../../lib/format'
 
 const ONGOING_STATUSES = ['ASSIGNED', 'ACCEPTED', 'ARRIVED', 'STARTED']
 
@@ -58,7 +29,13 @@ type SharedTripData = {
 export default function SharedTrip() {
   const { token } = useParams<{ token: string }>()
   const [data, setData] = useState<SharedTripData | null>(null)
-  const [notFound, setNotFound] = useState(false)
+  // 'not_found' (invalid/expired token, permanent — 404) is distinct from 'network' (transient
+  // failure, worth retrying) — conflating the two used to tell someone whose driver has spotty
+  // connectivity that their tracking link was simply invalid.
+  const [errorKind, setErrorKind] = useState<'not_found' | 'network' | null>(null)
+  const [retryTick, setRetryTick] = useState(0)
+
+  const retry = useCallback(() => setRetryTick((t) => t + 1), [])
 
   useEffect(() => {
     if (!token) return
@@ -70,11 +47,13 @@ export default function SharedTrip() {
         const r = await getSharedTrip(token)
         if (cancelled) return
         setData(r.data)
+        setErrorKind(null)
         if (!ONGOING_STATUSES.includes(r.data.status) && r.data.status !== 'REQUESTED' && interval) {
           clearInterval(interval)
         }
-      } catch {
-        if (!cancelled) setNotFound(true)
+      } catch (err: any) {
+        if (cancelled) return
+        setErrorKind(err?.response?.status === 404 ? 'not_found' : 'network')
       }
     }
     load()
@@ -83,9 +62,9 @@ export default function SharedTrip() {
       cancelled = true
       if (interval) clearInterval(interval)
     }
-  }, [token])
+  }, [token, retryTick])
 
-  if (notFound) {
+  if (errorKind === 'not_found') {
     return (
       <div className="min-h-[60vh] grid place-items-center text-center px-6">
         <div>
@@ -94,6 +73,23 @@ export default function SharedTrip() {
           </span>
           <h1 className="text-2xl font-bold text-stone-900 mb-2">Lien introuvable</h1>
           <p className="text-stone-500 max-w-sm">Ce lien de suivi n'existe pas ou n'est plus valide.</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (errorKind === 'network' && !data) {
+    return (
+      <div className="min-h-[60vh] grid place-items-center text-center px-6">
+        <div className="flex flex-col items-center gap-3">
+          <span className="grid place-items-center w-16 h-16 rounded-2xl bg-stone-100 text-stone-400 mx-auto mb-1">
+            <WifiOff size={28} />
+          </span>
+          <h1 className="text-2xl font-bold text-stone-900 mb-1">Connexion impossible</h1>
+          <p className="text-stone-500 max-w-sm mb-2">Impossible de charger le suivi pour le moment. Vérifiez votre connexion.</p>
+          <Button variant="outline" icon={<RotateCw size={15} />} onClick={retry}>
+            Réessayer
+          </Button>
         </div>
       </div>
     )
@@ -128,9 +124,9 @@ export default function SharedTrip() {
         <div className="rounded-xl overflow-hidden" style={{ height: '40vh' }}>
           <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%' }} scrollWheelZoom={false}>
             <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            {data.origin_lat != null && data.origin_lng != null && <Marker position={[data.origin_lat, data.origin_lng]} icon={pinIcon('#1f9d65', 'A')} />}
-            {data.dest_lat != null && data.dest_lng != null && <Marker position={[data.dest_lat, data.dest_lng]} icon={pinIcon('#f2590e', 'B')} />}
-            {driverPos && <Marker position={[driverPos.lat, driverPos.lng]} icon={carDivIcon} />}
+            {data.origin_lat != null && data.origin_lng != null && <Marker position={[data.origin_lat, data.origin_lng]} icon={originIcon()} />}
+            {data.dest_lat != null && data.dest_lng != null && <Marker position={[data.dest_lat, data.dest_lng]} icon={destinationIcon()} />}
+            {driverPos && <Marker position={[driverPos.lat, driverPos.lng]} icon={carIcon(data.driver?.vehicle?.type)} />}
           </MapContainer>
         </div>
       </Card>
@@ -149,7 +145,7 @@ export default function SharedTrip() {
       {data.driver && (
         <Card>
           <div className="flex items-center gap-3">
-            {data.driver.photo ? <img src={data.driver.photo} alt={data.driver.username} className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-card shrink-0" /> : <span className="grid place-items-center w-12 h-12 rounded-full bg-secondary-500 text-white font-bold uppercase shrink-0">{(data.driver.username || '?').slice(0, 2)}</span>}
+            {data.driver.photo ? <img src={data.driver.photo} alt={data.driver.username} className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-card shrink-0" /> : <span className="grid place-items-center w-12 h-12 rounded-full bg-secondary-500 text-white font-bold uppercase shrink-0">{getInitials(data.driver.username)}</span>}
             <div className="min-w-0">
               <div className="font-semibold text-stone-800 truncate">{data.driver.username || 'Chauffeur'}</div>
               {data.driver.vehicle && (

@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Socket } from 'socket.io-client'
 import DriverMap from '../Map/DriverMap'
-import { getAvailableChauffeurs, getMyTrips, createTrip, makePayment, getTransactions, estimatePrice, cancelTrip, getTrip, updateTripVehicleType, updateTripPaymentMethod, rateTrip, skipTripRating, getChauffeurRatingSummary, shareTrip, triggerSos, getRewardsStatus, getMyClientProfile } from '../../lib/api'
+import { getAvailableChauffeurs, getMyTrips, createTrip, makePayment, getTransactions, estimatePrice, cancelTrip, getTrip, updateTripVehicleType, updateTripPaymentMethod, rateTrip, skipTripRating, getChauffeurRatingSummary, shareTrip, triggerSos, getMyClientProfile } from '../../lib/api'
 import PaymentModal from '../../components/PaymentModal'
 import TripDetailModal from '../../components/TripDetailModal'
 import CheckpointCelebrationModal from '../../components/CheckpointCelebrationModal'
 import { useToasts } from '../../components/Toasts'
 import { useAuth } from '../../context/AuthContext'
+import { useRewards } from '../../context/RewardsContext'
 import Card from '../../components/ui/Card'
 import Badge from '../../components/ui/Badge'
 import Reveal from '../../components/ui/Reveal'
@@ -60,13 +61,7 @@ export default function ClientDashboard() {
   const [paymentMethod, setPaymentMethod] = useState('CASH')
   const [scheduleEnabled, setScheduleEnabled] = useState(false)
   const [scheduledAtInput, setScheduledAtInput] = useState('')
-  const [rewards, setRewards] = useState<{
-    total_distance_km: number
-    last_checkpoint_km: number
-    next_checkpoint_km: number
-    pending_discount: { pct: number; label: string } | null
-    history: { km: number; discount_pct: number | null; created_at: string }[]
-  } | null>(null)
+  const { status: rewards, refresh: refreshRewards } = useRewards()
   const [celebratingCheckpoints, setCelebratingCheckpoints] = useState<{ km: number; discount_pct: number | null }[] | null>(null)
   // Entirely separate from the gift discount above — a manually saved promo/referral code
   // (Account.tsx). Both auto-apply to the next trip (gift takes priority, see trips.routes.ts),
@@ -89,12 +84,6 @@ export default function ClientDashboard() {
   // it can be reported both by the direct REST response and by the trip socket broadcast.
   const terminalHandledTripIdRef = useRef<number | null>(null)
 
-  const refreshRewards = () => {
-    getRewardsStatus()
-      .then((r) => setRewards(r.data))
-      .catch(() => {})
-  }
-
   const refreshPromo = () => {
     getMyClientProfile()
       .then((r) => setPendingPromo(r.data.pending_promo_code ? { code: r.data.pending_promo_code, pct: r.data.pending_promo_discount_pct } : null))
@@ -106,17 +95,19 @@ export default function ClientDashboard() {
       try {
         const r = await getAvailableChauffeurs()
         setDrivers(r.data)
-      } catch (e) {}
+      } catch (e) {
+        addToast({ message: 'Impossible de charger les chauffeurs à proximité.', tone: 'error' })
+      }
       try {
         const t = await getMyTrips()
         setTrips(t.data)
         const ongoing = t.data.find((trip: ActiveTrip) => !TERMINAL_STATUSES.includes(trip.status))
         if (ongoing) setActiveTrip(ongoing)
       } catch (e) {
+        addToast({ message: 'Impossible de charger votre historique de courses.', tone: 'error' })
       } finally {
         setTripsLoading(false)
       }
-      refreshRewards()
       refreshPromo()
     }
     load()
@@ -573,20 +564,21 @@ export default function ClientDashboard() {
       </Reveal>
 
       <div className="grid lg:grid-cols-5 gap-6 items-start">
-        {/* Map — large, prominent */}
-        <Reveal variant="left" className="lg:col-span-3">
+        {/* Map — large, prominent, but secondary to the booking form on mobile (order-2): a
+            passenger in a hurry shouldn't have to scroll past 45vh of map first. */}
+        <Reveal variant="left" className="order-2 lg:order-1 lg:col-span-3">
           <Card className="!p-3 transition-shadow duration-300 hover:shadow-floating" padded={false}>
             <div className="flex items-center gap-2 px-2 pt-1 pb-2">
               <MapPinned size={18} className="text-brand-600" />
               <h2 className="font-semibold text-stone-800">Carte — chauffeurs à proximité</h2>
             </div>
-            <DriverMap standalone={false} height="60vh" initialDrivers={mappedDrivers} origin={originPoint} destination={destinationPoint} stops={stopPoints} route={route?.path} />
+            <DriverMap standalone={false} heightClassName="h-[45vh] lg:h-[60vh]" initialDrivers={mappedDrivers} origin={originPoint} destination={destinationPoint} stops={stopPoints} route={route?.path} />
           </Card>
         </Reveal>
 
         {/* Booking / ride status card */}
-        <Reveal variant="right" delay={100} className="lg:col-span-2">
-          <Card className="lg:top-20 transition-shadow duration-300 hover:shadow-floating">
+        <Reveal variant="right" delay={100} className="order-1 lg:order-2 lg:col-span-2">
+          <Card className="lg:sticky lg:top-20 transition-shadow duration-300 hover:shadow-floating">
             <RideStatusBar
               activeTrip={activeTrip}
               completedTrip={completedTrip}

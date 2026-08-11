@@ -1,198 +1,78 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import {
-  getUsers,
-  getAdminChauffeurs,
-  getAdminVehicles,
-  getAdminTrips,
-  updateAdminChauffeur,
-  deleteAdminChauffeur,
-  verifyChauffeur,
-  rejectChauffeur,
-  getAdminSosAlerts,
-  resolveSosAlert, getAdminPayouts, updatePayoutStatus,
-} from '../../lib/api'
+import { Link } from 'react-router-dom'
+import { getUsers, getAdminChauffeurs, getAdminVehicles, getAdminTrips, getAdminPayouts } from '../../lib/api'
 import Card from '../../components/ui/Card'
-import Badge from '../../components/ui/Badge'
 import Spinner from '../../components/ui/Spinner'
-import Button from '../../components/ui/Button'
 import MiniBarChart from '../../components/admin/MiniBarChart'
-import { useToasts } from '../../components/Toasts'
-import { Users, Car, Truck, Route as RouteIcon, ShieldCheck, Ban, Play, Trash2, Activity, X, Check, ShieldAlert, MapPin, FileText, Wallet } from 'lucide-react'
-import AdminNav from '../../components/admin/AdminNav'
+import AdminPageHeader from '../../components/admin/AdminPageHeader'
+import { Users, Car, Truck, Route as RouteIcon, ShieldCheck, Activity, Wallet, CalendarClock, ChevronRight } from 'lucide-react'
+import { STATUS_ORDER, STATUS_COLORS, formatDateShort } from '../../lib/adminFormat'
 
 type AdminUser = { id: number; username: string; phone: string; role: string; phone_verified: boolean }
-type AdminChauffeur = {
-  id: number
-  user: number
-  username?: string
-  phone?: string
-  is_verified: boolean
-  is_available: boolean
-  is_online: boolean
-  vehicle: { id: number; type: string; seats: number; plate_number: string } | null
-  permit?: string | null
-  insurance?: string | null
-}
-type AdminPayout = {
-  id: number
-  chauffeur: number
-  chauffeur_username?: string
-  chauffeur_phone?: string
-  amount: number
-  status: 'SCHEDULED' | 'PROCESSED' | 'FAILED'
-  scheduled_at: string | null
-  processed_at: string | null
-}
-type AdminVehicle = { id: number; type: string; seats: number; plate_number: string }
-type SosAlert = {
-  id: number
-  trip_id: number
-  trip_origin: string
-  trip_destination: string
-  passenger_username: string
-  passenger_phone: string
-  latitude: number | null
-  longitude: number | null
-  resolved: boolean
-  created_at: string
-}
-type AdminTrip = {
-  id: number
-  origin: string
-  destination: string
-  status: string
-  price: number | null
-  distance_km: number | null
-  vehicle_type: string
-  payment_method: string
-  created_at: string
-  passenger_detail: { id: number; username: string; phone: string } | null
-  driver_detail: { id: number; username?: string; phone?: string } | null
-}
+type AdminChauffeur = { id: number; is_verified: boolean; is_available: boolean; is_online: boolean }
+type AdminVehicle = { id: number }
+type AdminPayout = { id: number; status: 'SCHEDULED' | 'PROCESSED' | 'FAILED' }
+type AdminTrip = { id: number; status: string; price: number | null; created_at: string }
 
-const VEHICLE_LABELS: Record<string, string> = { CAR: 'Voiture', SEDAN: 'Berline', SUV: '4x4', MINIBUS: 'Minibus', BUS: 'Bus' }
-const PAYMENT_LABELS: Record<string, string> = { CASH: 'Espèces', ORANGE: 'Orange Money', WAVE: 'Wave', FREE: 'Free Money', CARD: 'Carte' }
-const PAYOUT_STATUS_STYLE: Record<AdminPayout['status'], { label: string; className: string }> = {
-  SCHEDULED: { label: 'En attente', className: 'bg-accent-300/40 text-accent-700' },
-  PROCESSED: { label: 'Versé', className: 'bg-secondary-100 text-secondary-800' },
-  FAILED: { label: 'Échoué', className: 'bg-red-100 text-red-700' },
-}
-
-const STATUS_ORDER = ['REQUESTED', 'ASSIGNED', 'ACCEPTED', 'STARTED', 'COMPLETED', 'CANCELLED']
-const STATUS_COLORS: Record<string, string> = {
-  REQUESTED: 'bg-accent-400',
-  ASSIGNED: 'bg-brand-400',
-  ACCEPTED: 'bg-brand-500',
-  STARTED: 'bg-secondary-400',
-  COMPLETED: 'bg-secondary-600',
-  CANCELLED: 'bg-red-400',
-}
-
-type Tab = 'clients' | 'chauffeurs' | 'vehicules' | 'courses' | 'retraits'
-
-function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: number | string }) {
-  return (
-    <Card className="flex items-center gap-3">
+function StatCard({ icon, label, value, to }: { icon: React.ReactNode; label: string; value: number | string; to?: string }) {
+  const content = (
+    <Card className="flex items-center gap-3 h-full">
       <span className="grid place-items-center w-11 h-11 rounded-xl bg-brand-50 text-brand-600 shrink-0">{icon}</span>
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="text-2xl font-bold text-stone-900 leading-tight">{value}</div>
         <div className="text-xs text-stone-500 truncate">{label}</div>
       </div>
+      {to && <ChevronRight size={16} className="text-stone-300 shrink-0" />}
     </Card>
+  )
+  return to ? (
+    <Link to={to} className="block hover:-translate-y-0.5 transition-transform">
+      {content}
+    </Link>
+  ) : (
+    content
   )
 }
 
-function formatDateShort(iso: string) {
-  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
-}
-
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
-
 export default function AdminOverview() {
-  const { addToast } = useToasts()
   const [users, setUsers] = useState<AdminUser[]>([])
   const [chauffeurs, setChauffeurs] = useState<AdminChauffeur[]>([])
   const [vehicles, setVehicles] = useState<AdminVehicle[]>([])
   const [trips, setTrips] = useState<AdminTrip[]>([])
-  const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<Tab>('clients')
-  const [chauffeurActionId, setChauffeurActionId] = useState<number | null>(null)
-  const [chauffeurActionError, setChauffeurActionError] = useState<string | null>(null)
-  const [reviewing, setReviewing] = useState<AdminChauffeur | null>(null)
-  const [acting, setActing] = useState<'accept' | 'reject' | null>(null)
-  const [sosAlerts, setSosAlerts] = useState<SosAlert[]>([])
-  const [resolvingSos, setResolvingSos] = useState<number | null>(null)
   const [payouts, setPayouts] = useState<AdminPayout[]>([])
-  const [processingPayout, setProcessingPayout] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let active = true
-    async function load() {
-      try {
-        const [u, c, v, t, s, p] = await Promise.all([getUsers(), getAdminChauffeurs(), getAdminVehicles(), getAdminTrips(), getAdminSosAlerts(), getAdminPayouts()])
+    Promise.all([getUsers(), getAdminChauffeurs(), getAdminVehicles(), getAdminTrips(), getAdminPayouts()])
+      .then(([u, c, v, t, p]) => {
         if (!active) return
         setUsers(u.data)
         setChauffeurs(c.data)
         setVehicles(v.data)
         setTrips(t.data)
-        setSosAlerts(s.data)
         setPayouts(p.data)
-      } catch (e) {
-        // ignore — sections just stay empty
-      } finally {
-        if (active) setLoading(false)
-      }
-    }
-    load()
+      })
+      .catch(() => {})
+      .finally(() => active && setLoading(false))
     return () => {
       active = false
     }
   }, [])
 
-  const handlePayoutStatus = async (id: number, status: 'PROCESSED' | 'FAILED') => {
-    setProcessingPayout(id)
-    try {
-      const r = await updatePayoutStatus(id, status)
-      setPayouts((prev) => prev.map((p) => (p.id === id ? r.data : p)))
-      addToast({ message: status === 'PROCESSED' ? 'Retrait marqué comme versé.' : 'Retrait marqué comme échoué.', tone: status === 'PROCESSED' ? 'success' : 'info' })
-    } catch (e: any) {
-      addToast({ message: e?.response?.data?.detail || 'Erreur lors de la mise à jour du retrait', tone: 'error' })
-    } finally {
-      setProcessingPayout(null)
-    }
-  }
-
-  const pendingPayoutsCount = useMemo(() => payouts.filter((p) => p.status === 'SCHEDULED').length, [payouts])
-
-  // SOS alerts are time-critical — refresh them on their own short cadence so an admin who's
-  // just looking at the page (no action needed) still notices a new one reasonably quickly.
-  useEffect(() => {
-    const id = setInterval(() => {
-      getAdminSosAlerts()
-        .then((r) => setSosAlerts(r.data))
-        .catch(() => {})
-    }, 20000)
-    return () => clearInterval(id)
-  }, [])
-
-  const unresolvedSos = useMemo(() => sosAlerts.filter((a) => !a.resolved), [sosAlerts])
-
-  const handleResolveSos = async (id: number) => {
-    setResolvingSos(id)
-    try {
-      await resolveSosAlert(id)
-      setSosAlerts((prev) => prev.map((a) => (a.id === id ? { ...a, resolved: true } : a)))
-      addToast({ message: 'Alerte marquée comme résolue.', tone: 'success' })
-    } catch (e: any) {
-      addToast({ message: e?.response?.data?.detail || "Erreur lors de la résolution de l'alerte", tone: 'error' })
-    } finally {
-      setResolvingSos(null)
-    }
-  }
-
   const clients = useMemo(() => users.filter((u) => u.role === 'CLIENT'), [users])
+  const onlineChauffeurs = useMemo(() => chauffeurs.filter((c) => c.is_online).length, [chauffeurs])
+  const pendingPayouts = useMemo(() => payouts.filter((p) => p.status === 'SCHEDULED').length, [payouts])
+
+  const todayCount = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10)
+    return trips.filter((t) => t.created_at.slice(0, 10) === today).length
+  }, [trips])
+
+  const completedRevenue = useMemo(
+    () => trips.filter((t) => t.status === 'COMPLETED' && t.price != null).reduce((sum, t) => sum + (t.price || 0), 0),
+    [trips],
+  )
 
   const tripsByStatus = useMemo(
     () => STATUS_ORDER.map((status) => ({ label: status, value: trips.filter((t) => t.status === status).length, colorClass: STATUS_COLORS[status] })),
@@ -224,51 +104,6 @@ export default function AdminOverview() {
     [chauffeurs],
   )
 
-  const completedRevenue = useMemo(
-    () => trips.filter((t) => t.status === 'COMPLETED' && t.price != null).reduce((sum, t) => sum + (t.price || 0), 0),
-    [trips],
-  )
-
-  async function handleToggleAvailable(c: AdminChauffeur) {
-    setChauffeurActionId(c.id)
-    setChauffeurActionError(null)
-    try {
-      const res = await updateAdminChauffeur(c.id, { is_available: !c.is_available })
-      setChauffeurs((prev) => prev.map((x) => (x.id === c.id ? { ...x, ...res.data } : x)))
-    } catch (e: any) {
-      setChauffeurActionError(e?.response?.data?.detail || 'Action impossible.')
-    } finally {
-      setChauffeurActionId(null)
-    }
-  }
-
-  async function handleAssignVehicle(c: AdminChauffeur, vehicleId: string) {
-    setChauffeurActionId(c.id)
-    setChauffeurActionError(null)
-    try {
-      const res = await updateAdminChauffeur(c.id, { vehicle: vehicleId ? Number(vehicleId) : null })
-      setChauffeurs((prev) => prev.map((x) => (x.id === c.id ? { ...x, ...res.data } : x)))
-    } catch (e: any) {
-      setChauffeurActionError(e?.response?.data?.detail || 'Action impossible.')
-    } finally {
-      setChauffeurActionId(null)
-    }
-  }
-
-  async function handleDeleteChauffeur(c: AdminChauffeur) {
-    if (!window.confirm(`Retirer le statut chauffeur de ${c.username || `#${c.user}`} ? Le compte redevient un compte passager.`)) return
-    setChauffeurActionId(c.id)
-    setChauffeurActionError(null)
-    try {
-      await deleteAdminChauffeur(c.id)
-      setChauffeurs((prev) => prev.filter((x) => x.id !== c.id))
-    } catch (e: any) {
-      setChauffeurActionError(e?.response?.data?.detail || 'Suppression impossible.')
-    } finally {
-      setChauffeurActionId(null)
-    }
-  }
-
   if (loading) {
     return (
       <div className="min-h-[60vh] grid place-items-center">
@@ -277,89 +112,20 @@ export default function AdminOverview() {
     )
   }
 
-  const handleAccept = async () => {
-    if (!reviewing) return
-    setActing('accept')
-    try {
-      await verifyChauffeur(reviewing.id)
-      setChauffeurs((prev) => prev.map((c) => (c.id === reviewing.id ? { ...c, is_verified: true } : c)))
-      addToast({ message: 'Chauffeur vérifié.', tone: 'success' })
-      setReviewing(null)
-    } catch (e: any) {
-      addToast({ message: e?.response?.data?.detail || 'Erreur lors de la vérification.', tone: 'error' })
-    } finally {
-      setActing(null)
-    }
-  }
-
-  const handleReject = async () => {
-    if (!reviewing) return
-    setActing('reject')
-    try {
-      await rejectChauffeur(reviewing.id)
-      setChauffeurs((prev) => prev.filter((c) => c.id !== reviewing.id))
-      addToast({ message: 'Candidature refusée.', tone: 'info' })
-      setReviewing(null)
-    } catch (e: any) {
-      addToast({ message: e?.response?.data?.detail || 'Erreur lors du refus.', tone: 'error' })
-    } finally {
-      setActing(null)
-    }
-  }
-
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-      <AdminNav />
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-stone-900">Vue d'ensemble</h1>
-        <p className="text-stone-500 text-sm">Suivi global de la plateforme : clients, chauffeurs, véhicules et courses.</p>
-      </div>
-
-      {unresolvedSos.length > 0 && (
-        <Card className="mb-6 !border-red-200 !bg-red-50">
-          <h2 className="font-semibold text-red-700 mb-3 flex items-center gap-2">
-            <ShieldAlert size={18} />
-            Alertes SOS en cours ({unresolvedSos.length})
-          </h2>
-          <div className="space-y-2">
-            {unresolvedSos.map((a) => (
-              <div key={a.id} className="flex items-center justify-between gap-3 bg-white rounded-xl border border-red-100 px-4 py-3">
-                <div className="min-w-0">
-                  <div className="font-medium text-stone-800 truncate">
-                    {a.passenger_username} · {a.passenger_phone}
-                  </div>
-                  <div className="text-xs text-stone-500 truncate">
-                    Course #{a.trip_id} — {a.trip_origin} → {a.trip_destination}
-                  </div>
-                  <div className="text-xs text-stone-400">{formatDateTime(a.created_at)}</div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {a.latitude != null && a.longitude != null && (
-                    <a
-                      href={`https://www.openstreetmap.org/?mlat=${a.latitude}&mlon=${a.longitude}#map=16/${a.latitude}/${a.longitude}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700"
-                    >
-                      <MapPin size={13} /> Position
-                    </a>
-                  )}
-                  <Button size="sm" variant="danger" loading={resolvingSos === a.id} onClick={() => handleResolveSos(a.id)}>
-                    Marquer résolu
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
+    <div className="max-w-7xl mx-auto">
+      <AdminPageHeader title="Vue d'ensemble" description="Suivi global de la plateforme : clients, chauffeurs, véhicules et courses." />
 
       {/* Stat cards */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard icon={<Users size={20} />} label="Clients" value={clients.length} />
-        <StatCard icon={<Car size={20} />} label="Chauffeurs" value={chauffeurs.length} />
-        <StatCard icon={<Truck size={20} />} label="Véhicules" value={vehicles.length} />
-        <StatCard icon={<RouteIcon size={20} />} label="Courses" value={trips.length} />
+        <StatCard icon={<Users size={20} />} label="Clients" value={clients.length} to="/admin/clients" />
+        <StatCard icon={<Car size={20} />} label="Chauffeurs" value={chauffeurs.length} to="/admin/chauffeurs" />
+        <StatCard icon={<Truck size={20} />} label="Véhicules" value={vehicles.length} to="/admin/vehicules" />
+        <StatCard icon={<RouteIcon size={20} />} label="Courses" value={trips.length} to="/admin/courses" />
+        <StatCard icon={<Activity size={20} />} label="Chauffeurs en ligne" value={onlineChauffeurs} to="/admin/users" />
+        <StatCard icon={<CalendarClock size={20} />} label="Courses aujourd'hui" value={todayCount} to="/admin/courses" />
+        <StatCard icon={<Wallet size={20} />} label="Retraits en attente" value={pendingPayouts} to="/admin/retraits" />
+        <StatCard icon={<Wallet size={20} />} label="Revenu (courses terminées)" value={`${completedRevenue.toLocaleString('fr-FR')} XOF`} />
       </div>
 
       {/* Charts */}
@@ -386,362 +152,8 @@ export default function AdminOverview() {
             Chauffeurs
           </h2>
           <MiniBarChart data={chauffeurStats} />
-          <div className="mt-4 pt-4 border-t border-stone-100 text-sm text-stone-500">
-            Revenu (courses terminées) : <span className="font-semibold text-stone-800">{completedRevenue.toLocaleString('fr-FR')} XOF</span>
-          </div>
         </Card>
       </div>
-
-      {/* Lists */}
-      <Card padded={false} className="flex flex-col max-h-[60vh]">
-        <div className="flex items-center gap-1 px-3 pt-3 border-b border-stone-100">
-          {([
-            ['clients', `Clients (${clients.length})`],
-            ['chauffeurs', `Chauffeurs (${chauffeurs.length})`],
-            ['vehicules', `Véhicules (${vehicles.length})`],
-            ['courses', `Courses (${trips.length})`],
-            ['retraits', `Retraits (${payouts.length})`],
-          ] as [Tab, string][]).map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setTab(key)}
-              className={`relative px-3.5 py-2 text-sm font-medium rounded-t-lg transition-colors ${
-                tab === key ? 'bg-brand-50 text-brand-700' : 'text-stone-500 hover:text-stone-800'
-              }`}
-            >
-              {label}
-              {key === 'retraits' && pendingPayoutsCount > 0 && (
-                <span className="absolute -top-1 -right-1 grid place-items-center w-4 h-4 rounded-full bg-accent-500 text-white text-[10px] font-bold">
-                  {pendingPayoutsCount}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        <div className="overflow-x-auto">
-          {tab === 'clients' && (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-stone-400">
-                  <th className="px-5 py-3 font-medium">Utilisateur</th>
-                  <th className="px-5 py-3 font-medium">Téléphone</th>
-                  <th className="px-5 py-3 font-medium">Numéro vérifié</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100">
-                {clients.length === 0 && (
-                  <tr>
-                    <td colSpan={3} className="text-center text-stone-400 py-8">Aucun client.</td>
-                  </tr>
-                )}
-                {clients.map((c) => (
-                  <tr key={c.id}>
-                    <td className="px-5 py-3 font-medium text-stone-800">{c.username}</td>
-                    <td className="px-5 py-3 text-stone-500">{c.phone}</td>
-                    <td className="px-5 py-3">
-                      {c.phone_verified ? (
-                        <span className="text-secondary-700 font-medium">Vérifié</span>
-                      ) : (
-                        <span className="text-stone-400">Non vérifié</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          {tab === 'chauffeurs' && (
-            <>
-              {chauffeurActionError && (
-                <div className="mx-5 mt-3 rounded-lg bg-red-50 text-red-700 text-sm px-3 py-2">{chauffeurActionError}</div>
-              )}
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs uppercase tracking-wide text-stone-400">
-                    <th className="px-5 py-3 font-medium">Chauffeur</th>
-                    <th className="px-5 py-3 font-medium">Téléphone</th>
-                    <th className="px-5 py-3 font-medium">Véhicule</th>
-                    <th className="px-5 py-3 font-medium">Statut</th>
-                    <th className="px-5 py-3 font-medium">En ligne</th>
-                    <th className="px-5 py-3 font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100">
-                  {chauffeurs.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="text-center text-stone-400 py-8">Aucun chauffeur.</td>
-                    </tr>
-                  )}
-                  {chauffeurs.map((c) => {
-                    const busy = chauffeurActionId === c.id
-                    return (
-                      <tr key={c.id}>
-                        <td className="px-5 py-3 font-medium text-stone-800">{c.username || `#${c.user}`}</td>
-                        <td className="px-5 py-3 text-stone-500">{c.phone || '—'}</td>
-                        <td className="px-5 py-3 text-stone-600">
-                          <select
-                            value={c.vehicle?.id ?? ''}
-                            disabled={busy}
-                            onChange={(e) => handleAssignVehicle(c, e.target.value)}
-                            className="rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-xs text-stone-700 outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400 disabled:opacity-50"
-                          >
-                            <option value="">Aucun véhicule</option>
-                            {vehicles.map((v) => (
-                              <option key={v.id} value={v.id}>
-                                {VEHICLE_LABELS[v.type] || v.type} · {v.plate_number}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="px-5 py-3">
-                          <div className="flex flex-col gap-1">
-                            {c.is_verified ? (
-                              <span className="text-secondary-700 font-medium">Vérifié</span>
-                            ) : (
-                              <span className="text-accent-700 font-medium">En attente</span>
-                            )}
-                            {!c.is_available && <span className="text-red-600 text-xs font-medium">Suspendu</span>}
-                          </div>
-                        </td>
-                        <td className="px-5 py-3">
-                          {c.is_online ? (
-                            <span className="flex items-center gap-1.5 text-secondary-700 font-medium">
-                              <span className="live-dot !w-2 !h-2" />
-                              En ligne
-                            </span>
-                          ) : (
-                            <span className="text-stone-400">Hors ligne</span>
-                          )}
-                        </td>
-                        <td className="px-5 py-3">
-                          {!c.is_verified ? (
-                            <Button size="sm" variant="outline" disabled={busy} onClick={() => setReviewing(c)}>
-                              Examiner
-                            </Button>
-                          ) : (
-                            <div className="flex items-center gap-1.5">
-                              <Button
-                                size="sm"
-                                variant={c.is_available ? 'outline' : 'secondary'}
-                                disabled={busy}
-                                onClick={() => handleToggleAvailable(c)}
-                                title={c.is_available ? 'Suspendre ce chauffeur' : 'Réactiver ce chauffeur'}
-                              >
-                                {c.is_available ? <Ban size={14} /> : <Play size={14} />}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="danger"
-                                disabled={busy}
-                                onClick={() => handleDeleteChauffeur(c)}
-                                title="Retirer le statut chauffeur"
-                              >
-                                <Trash2 size={14} />
-                              </Button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </>
-          )}
-
-          {tab === 'vehicules' && (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-stone-400">
-                  <th className="px-5 py-3 font-medium">Type</th>
-                  <th className="px-5 py-3 font-medium">Plaque</th>
-                  <th className="px-5 py-3 font-medium">Places</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100">
-                {vehicles.length === 0 && (
-                  <tr>
-                    <td colSpan={3} className="text-center text-stone-400 py-8">Aucun véhicule.</td>
-                  </tr>
-                )}
-                {vehicles.map((v) => (
-                  <tr key={v.id}>
-                    <td className="px-5 py-3 font-medium text-stone-800">{VEHICLE_LABELS[v.type] || v.type}</td>
-                    <td className="px-5 py-3 text-stone-600">{v.plate_number}</td>
-                    <td className="px-5 py-3 text-stone-500">{v.seats}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          {tab === 'courses' && (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-stone-400">
-                  <th className="px-5 py-3 font-medium">Trajet</th>
-                  <th className="px-5 py-3 font-medium">Client</th>
-                  <th className="px-5 py-3 font-medium">Chauffeur</th>
-                  <th className="px-5 py-3 font-medium">Paiement</th>
-                  <th className="px-5 py-3 font-medium">Statut</th>
-                  <th className="px-5 py-3 font-medium">Date</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100">
-                {trips.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="text-center text-stone-400 py-8">Aucune course.</td>
-                  </tr>
-                )}
-                {trips.map((t) => (
-                  <tr key={t.id}>
-                    <td className="px-5 py-3 min-w-[200px]">
-                      <div className="font-medium text-stone-800 truncate max-w-[220px]">
-                        {t.origin} → {t.destination}
-                      </div>
-                      <div className="text-xs text-stone-400 mt-0.5">
-                        {t.distance_km ? `${Number(t.distance_km).toFixed(1)} km` : '—'} · {t.price ? `${t.price} XOF` : 'Prix non estimé'}
-                      </div>
-                    </td>
-                    <td className="px-5 py-3 text-stone-600">{t.passenger_detail?.username || '—'}</td>
-                    <td className="px-5 py-3 text-stone-600">{t.driver_detail?.username || '—'}</td>
-                    <td className="px-5 py-3 text-stone-500">{PAYMENT_LABELS[t.payment_method] || t.payment_method}</td>
-                    <td className="px-5 py-3">
-                      <Badge status={t.status} />
-                    </td>
-                    <td className="px-5 py-3 text-stone-400 whitespace-nowrap">{formatDateTime(t.created_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          {tab === 'retraits' && (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-stone-400">
-                  <th className="px-5 py-3 font-medium">Chauffeur</th>
-                  <th className="px-5 py-3 font-medium">Montant</th>
-                  <th className="px-5 py-3 font-medium">Statut</th>
-                  <th className="px-5 py-3 font-medium">Demandé le</th>
-                  <th className="px-5 py-3 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100">
-                {payouts.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="text-center text-stone-400 py-8">Aucune demande de retrait.</td>
-                  </tr>
-                )}
-                {payouts.map((p) => (
-                  <tr key={p.id}>
-                    <td className="px-5 py-3 font-medium text-stone-800">
-                      {p.chauffeur_username || `#${p.chauffeur}`}
-                      {p.chauffeur_phone && <div className="text-xs text-stone-400 font-normal">{p.chauffeur_phone}</div>}
-                    </td>
-                    <td className="px-5 py-3 text-stone-600">{p.amount.toLocaleString('fr-FR')} XOF</td>
-                    <td className="px-5 py-3">
-                      <span className={`inline-flex items-center rounded-full text-xs font-semibold px-2.5 py-1 ${PAYOUT_STATUS_STYLE[p.status].className}`}>{PAYOUT_STATUS_STYLE[p.status].label}</span>
-                    </td>
-                    <td className="px-5 py-3 text-stone-400 whitespace-nowrap">{p.scheduled_at ? formatDateTime(p.scheduled_at) : '—'}</td>
-                    <td className="px-5 py-3">
-                      {p.status === 'SCHEDULED' ? (
-                        <div className="flex items-center gap-1.5">
-                          <Button size="sm" variant="secondary" loading={processingPayout === p.id} onClick={() => handlePayoutStatus(p.id, 'PROCESSED')} icon={<Wallet size={13} />}>
-                            Versé
-                          </Button>
-                          <Button size="sm" variant="danger" disabled={processingPayout === p.id} onClick={() => handlePayoutStatus(p.id, 'FAILED')}>
-                            Échoué
-                          </Button>
-                        </div>
-                      ) : (
-                        <span className="text-stone-300">—</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </Card>
-
-      {reviewing && (
-        <div className="fixed inset-0 bg-stone-900/50 flex items-center justify-center z-[1000] p-4">
-          <div className="bg-white rounded-2xl shadow-floating w-full max-w-sm p-6 relative animate-fade-in-up">
-            <button
-              onClick={() => setReviewing(null)}
-              className="absolute right-4 top-4 text-stone-400 hover:text-stone-600"
-              disabled={acting !== null}
-            >
-              <X size={18} />
-            </button>
-            <span className="grid place-items-center w-11 h-11 rounded-xl bg-brand-50 text-brand-600 mb-3">
-              <ShieldCheck size={20} />
-            </span>
-            <h3 className="text-lg font-semibold text-stone-900">Vérifier ce chauffeur</h3>
-            <p className="text-sm text-stone-500 mb-4">Vérifiez ses informations avant de valider ou refuser sa candidature.</p>
-
-            <div className="space-y-2 mb-5">
-              <div className="flex items-center justify-between rounded-xl border border-stone-100 bg-stone-50 px-4 py-2.5 text-sm">
-                <span className="text-stone-500">Chauffeur</span>
-                <span className="font-medium text-stone-800">{reviewing.username || `#${reviewing.user}`}</span>
-              </div>
-              <div className="flex items-center justify-between rounded-xl border border-stone-100 bg-stone-50 px-4 py-2.5 text-sm">
-                <span className="text-stone-500">Téléphone</span>
-                <span className="font-medium text-stone-800">{reviewing.phone || '—'}</span>
-              </div>
-              <div className="flex items-center justify-between rounded-xl border border-stone-100 bg-stone-50 px-4 py-2.5 text-sm">
-                <span className="text-stone-500">Véhicule</span>
-                <span className="font-medium text-stone-800">
-                  {reviewing.vehicle ? `${VEHICLE_LABELS[reviewing.vehicle.type] || reviewing.vehicle.type} · ${reviewing.vehicle.seats} places` : '—'}
-                </span>
-              </div>
-              <div className="flex items-center justify-between rounded-xl border border-stone-100 bg-stone-50 px-4 py-2.5 text-sm">
-                <span className="text-stone-500">Plaque</span>
-                <span className="font-medium text-stone-800">{reviewing.vehicle?.plate_number || '—'}</span>
-              </div>
-              <div className="flex items-center justify-between rounded-xl border border-stone-100 bg-stone-50 px-4 py-2.5 text-sm">
-                <span className="text-stone-500 flex items-center gap-1.5">
-                  <FileText size={13} />
-                  Permis
-                </span>
-                {reviewing.permit ? (
-                  <a href={reviewing.permit} target="_blank" rel="noreferrer" className="font-medium text-brand-600 hover:underline">
-                    Voir le document
-                  </a>
-                ) : (
-                  <span className="text-stone-300">Non fourni</span>
-                )}
-              </div>
-              <div className="flex items-center justify-between rounded-xl border border-stone-100 bg-stone-50 px-4 py-2.5 text-sm">
-                <span className="text-stone-500 flex items-center gap-1.5">
-                  <FileText size={13} />
-                  Assurance
-                </span>
-                {reviewing.insurance ? (
-                  <a href={reviewing.insurance} target="_blank" rel="noreferrer" className="font-medium text-brand-600 hover:underline">
-                    Voir le document
-                  </a>
-                ) : (
-                  <span className="text-stone-300">Non fourni</span>
-                )}
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <Button variant="danger" icon={<Ban size={16} />} loading={acting === 'reject'} disabled={acting === 'accept'} onClick={handleReject}>
-                Refuser
-              </Button>
-              <Button variant="primary" icon={<Check size={16} />} loading={acting === 'accept'} disabled={acting === 'reject'} onClick={handleAccept}>
-                Accepter
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

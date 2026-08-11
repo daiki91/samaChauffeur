@@ -7,7 +7,6 @@ import { getUserLocations } from '../../lib/api'
 import { connectPresenceSocket } from '../../lib/socket'
 import Card from '../../components/ui/Card'
 import Spinner from '../../components/ui/Spinner'
-import AdminNav from '../../components/admin/AdminNav'
 import { MapPinned, Car, User as UserIcon } from 'lucide-react'
 
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -154,8 +153,7 @@ export default function AdminMap() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-      <AdminNav />
+    <div className="max-w-7xl mx-auto">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-stone-900 flex items-center gap-2">

@@ -76,7 +76,7 @@ export default function CheckpointCelebrationModal({ checkpoints, onClose }: Pro
 
   return (
     <div className="fixed inset-x-0 top-4 sm:top-6 z-[1000] flex justify-center px-4 pointer-events-none">
-      <div key={index} className="relative pointer-events-auto bg-white rounded-2xl shadow-floating w-full max-w-sm p-5 text-center animate-fade-in-up">
+      <div key={index} role="status" aria-live="polite" className="relative pointer-events-auto bg-white rounded-2xl shadow-floating w-full max-w-sm p-5 text-center animate-fade-in-up">
         <Confetti />
         <button onClick={onClose} className="absolute right-3 top-3 text-stone-400 hover:text-stone-600" aria-label="Fermer">
           <X size={16} />

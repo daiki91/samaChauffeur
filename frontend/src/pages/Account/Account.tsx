@@ -8,10 +8,10 @@ import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Spinner from '../../components/ui/Spinner'
 import Reveal from '../../components/ui/Reveal'
+import Modal from '../../components/ui/Modal'
+import { getInitials, VEHICLE_LABELS } from '../../lib/format'
 
 const ROLE_LABELS: Record<string, string> = { CLIENT: 'Passager', CHAUFFEUR: 'Chauffeur', ADMIN: 'Admin' }
-
-const VEHICLE_LABELS: Record<string, string> = { CAR: 'Voiture', SEDAN: 'Berline', SUV: '4x4', MINIBUS: 'Minibus', BUS: 'Bus' }
 
 const LANGUAGE_OPTIONS = [
   { value: 'fr', label: 'Français' },
@@ -54,7 +54,7 @@ export default function Account() {
           .then((r) => setRating(r.data))
           .catch(() => {})
       })
-      .catch(() => {})
+      .catch(() => addToast({ message: 'Impossible de charger votre profil chauffeur.', tone: 'error' }))
   }, [user?.role])
 
   useEffect(() => {
@@ -64,7 +64,7 @@ export default function Account() {
         setReferralCode(res.data.referral_code || null)
         setPendingPromo(res.data.pending_promo_code ? { code: res.data.pending_promo_code, pct: res.data.pending_promo_discount_pct } : null)
       })
-      .catch(() => {})
+      .catch(() => addToast({ message: 'Impossible de charger votre code promo et votre code de parrainage.', tone: 'error' }))
   }, [user?.role])
 
   const handleSavePromo = async () => {
@@ -206,7 +206,7 @@ export default function Account() {
       <Reveal variant="up">
         <Card className="mb-6 transition-shadow duration-300 hover:shadow-floating">
           <div className="flex items-center gap-3 mb-5">
-            {driverPhoto ? <img src={driverPhoto} alt={user.username} className="w-14 h-14 rounded-full object-cover shrink-0 border-2 border-white shadow-card" /> : <span className="grid place-items-center w-14 h-14 rounded-full bg-warm-gradient text-white font-bold uppercase text-lg shrink-0">{user.username?.slice(0, 2)}</span>}
+            {driverPhoto ? <img src={driverPhoto} alt={user.username} className="w-14 h-14 rounded-full object-cover shrink-0 border-2 border-white shadow-card" /> : <span className="grid place-items-center w-14 h-14 rounded-full bg-warm-gradient text-white font-bold uppercase text-lg shrink-0">{getInitials(user.username)}</span>}
             <div className="min-w-0">
               <div className="font-semibold text-stone-900 truncate">{user.username}</div>
               <span className="inline-flex items-center gap-1 text-xs font-medium text-stone-500">
@@ -230,7 +230,14 @@ export default function Account() {
                   </button>
                 ) : (
                   <div className="flex items-center gap-1.5">
-                    <input autoFocus value={usernameDraft} onChange={(e) => setUsernameDraft(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveUsername()} className="w-32 text-sm rounded-lg border border-stone-200 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-brand-200 focus:border-brand-300" />
+                    <input
+                      autoFocus
+                      aria-label="Nom d'utilisateur"
+                      value={usernameDraft}
+                      onChange={(e) => setUsernameDraft(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && saveUsername()}
+                      className="w-32 text-sm rounded-lg border border-stone-200 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-brand-200 focus:border-brand-300"
+                    />
                     <button onClick={saveUsername} disabled={savingUsername} className="grid place-items-center w-7 h-7 rounded-lg bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-60">
                       {savingUsername ? <Spinner size={13} className="!border-white/40 !border-t-white" /> : <Check size={14} />}
                     </button>
@@ -298,6 +305,7 @@ export default function Account() {
             <div>
               <div className="flex items-center gap-1.5">
                 <input
+                  aria-label="Code promo"
                   value={promoInput}
                   onChange={(e) => {
                     setPromoInput(e.target.value.toUpperCase())
@@ -415,28 +423,23 @@ export default function Account() {
         </Card>
       </Reveal>
 
-      {confirming && (
-        <div className="fixed inset-0 bg-stone-900/50 flex items-center justify-center z-[1000] p-4">
-          <div className="bg-white rounded-2xl shadow-floating w-full max-w-sm p-6 relative animate-fade-in-up">
-            <button onClick={() => setConfirming(false)} className="absolute right-4 top-4 text-stone-400 hover:text-stone-600" disabled={deleting}>
-              <X size={18} />
-            </button>
-            <span className="grid place-items-center w-11 h-11 rounded-xl bg-red-50 text-red-600 mb-3">
-              <Trash2 size={20} />
-            </span>
-            <h3 className="text-lg font-semibold text-stone-900">Supprimer définitivement le compte ?</h3>
-            <p className="text-sm text-stone-500 mb-5">Cette action est irréversible : vos courses et votre historique seront supprimés. Cette action ne peut pas être annulée.</p>
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setConfirming(false)} disabled={deleting}>
-                Annuler
-              </Button>
-              <Button variant="danger" loading={deleting} onClick={handleDelete}>
-                Oui, supprimer définitivement
-              </Button>
-            </div>
-          </div>
+      <Modal open={confirming} onClose={() => setConfirming(false)} dismissible={!deleting} labelledBy="delete-account-title">
+        <span className="grid place-items-center w-11 h-11 rounded-xl bg-red-50 text-red-600 mb-3">
+          <Trash2 size={20} />
+        </span>
+        <h3 id="delete-account-title" className="text-lg font-semibold text-stone-900">
+          Supprimer définitivement le compte ?
+        </h3>
+        <p className="text-sm text-stone-500 mb-5">Cette action est irréversible : vos courses et votre historique seront supprimés. Cette action ne peut pas être annulée.</p>
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setConfirming(false)} disabled={deleting}>
+            Annuler
+          </Button>
+          <Button variant="danger" loading={deleting} onClick={handleDelete}>
+            Oui, supprimer définitivement
+          </Button>
         </div>
-      )}
+      </Modal>
     </div>
   )
 }

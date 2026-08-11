@@ -19,30 +19,25 @@ export default function AppDownload() {
           </h2>
           <p className="text-white/70 text-lg mb-8 max-w-md">
             Réservez une course en deux tapotements, suivez votre chauffeur en direct et payez sans sortir de
-            l'application. Téléchargez-la gratuitement dès maintenant.
+            l'application — l'app mobile arrive bientôt sur App Store et Google Play.
           </p>
 
+          {/* Not live yet — shown as inert badges rather than links that go nowhere. */}
           <div className="flex flex-wrap gap-4 mb-10">
-            <a
-              href="#"
-              className="group flex items-center gap-3 rounded-2xl bg-white px-5 py-3 text-stone-900 shadow-floating transition-transform duration-200 hover:-translate-y-1"
-            >
+            <span className="flex items-center gap-3 rounded-2xl bg-white/90 px-5 py-3 text-stone-900 cursor-not-allowed opacity-80">
               <img src={appleStoreLogo} alt="" className="w-7 h-7 shrink-0 object-contain" />
               <span className="text-left leading-tight">
-                <span className="block text-[10px] uppercase tracking-wide text-stone-500">Télécharger sur</span>
+                <span className="block text-[10px] uppercase tracking-wide text-stone-500">Bientôt sur</span>
                 <span className="block text-base font-bold -mt-0.5">App Store</span>
               </span>
-            </a>
-            <a
-              href="#"
-              className="group flex items-center gap-3 rounded-2xl bg-white px-5 py-3 text-stone-900 shadow-floating transition-transform duration-200 hover:-translate-y-1"
-            >
+            </span>
+            <span className="flex items-center gap-3 rounded-2xl bg-white/90 px-5 py-3 text-stone-900 cursor-not-allowed opacity-80">
               <img src={googlePlayLogo} alt="" className="w-7 h-7 shrink-0 object-contain rounded-sm" />
               <span className="text-left leading-tight">
-                <span className="block text-[10px] uppercase tracking-wide text-stone-500">Disponible sur</span>
+                <span className="block text-[10px] uppercase tracking-wide text-stone-500">Bientôt sur</span>
                 <span className="block text-base font-bold -mt-0.5">Google Play</span>
               </span>
-            </a>
+            </span>
           </div>
 
           <div className="flex flex-wrap gap-x-8 gap-y-3 text-sm text-white/60">

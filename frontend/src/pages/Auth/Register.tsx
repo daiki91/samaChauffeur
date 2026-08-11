@@ -36,7 +36,7 @@ export default function Register() {
       subtitle="Rejoignez samaChauffeur en moins d'une minute."
       footer={
         <>
-          Déjà inscrit ?{''}
+          Déjà inscrit ?{' '}
           <Link to="/auth/login" className="font-semibold text-brand-600">
             Se connecter
           </Link>

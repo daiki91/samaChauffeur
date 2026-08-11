@@ -1,32 +1,16 @@
-import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Gift, MapPin, Sparkles } from 'lucide-react'
-import { getRewardsStatus } from '../../lib/api'
+import { ArrowLeft, Gift, MapPin, Sparkles, RotateCw } from 'lucide-react'
+import { useRewards } from '../../context/RewardsContext'
 import Card from '../../components/ui/Card'
+import Button from '../../components/ui/Button'
 import Reveal from '../../components/ui/Reveal'
 import Spinner from '../../components/ui/Spinner'
 import AnimatedNumber from '../../components/ui/AnimatedNumber'
 import RewardsProgress from '../../components/RewardsProgress'
 
-type RewardsStatus = {
-  total_distance_km: number
-  last_checkpoint_km: number
-  next_checkpoint_km: number
-  pending_discount: { pct: number; label: string } | null
-  history: { km: number; discount_pct: number | null; created_at: string }[]
-}
-
 export default function Rewards() {
   const navigate = useNavigate()
-  const [status, setStatus] = useState<RewardsStatus | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    getRewardsStatus()
-      .then((r) => setStatus(r.data))
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
+  const { status, loading, error, refresh } = useRewards()
 
   return (
     <div className="max-w-xl mx-auto px-4 sm:px-6 py-8">
@@ -35,12 +19,19 @@ export default function Rewards() {
         Retour
       </button>
 
-      {loading ? (
+      {loading && !status ? (
         <div className="min-h-[40vh] grid place-items-center">
           <Spinner size={28} />
         </div>
       ) : !status ? (
-        <p className="text-sm text-stone-500">Impossible de charger votre progression pour le moment.</p>
+        <div className="min-h-[30vh] flex flex-col items-center justify-center text-center gap-3">
+          <p className="text-sm text-stone-500">{error ? 'Impossible de charger votre progression pour le moment.' : 'Aucune progression pour le moment.'}</p>
+          {error && (
+            <Button variant="outline" size="sm" icon={<RotateCw size={14} />} onClick={refresh} loading={loading}>
+              Réessayer
+            </Button>
+          )}
+        </div>
       ) : (
         <>
           <Reveal variant="fade">

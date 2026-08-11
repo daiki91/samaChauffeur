@@ -6,6 +6,9 @@ type Toast = { id: string; message: string; tone?: Tone; leaving?: boolean }
 
 const DURATION = 4500
 const EXIT_MS = 280
+// Caps how many toasts can stack on screen at once — a cascade of failed API calls shouldn't
+// fill the viewport; older ones are dropped in favor of the newest.
+const MAX_VISIBLE = 4
 
 const ToastContext = createContext<{ addToast: (t: Omit<Toast, 'id'>) => void } | undefined>(undefined)
 
@@ -23,7 +26,7 @@ const toneConfig: Record<Tone, { icon: typeof Info; iconBg: string; iconColor: s
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
-  const timers = useRef<Record<string, { leave: ReturnType<typeof setTimeout>; remove: ReturnType<typeof setTimeout> }>>({})
+  const timers = useRef<Record<string, { leave: ReturnType<typeof setTimeout>; remove?: ReturnType<typeof setTimeout> }>>({})
 
   const remove = useCallback((id: string) => {
     setToasts((s) => s.filter((t) => t.id !== id))
@@ -33,25 +36,39 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const beginLeave = useCallback(
     (id: string) => {
       setToasts((s) => s.map((t) => (t.id === id ? { ...t, leaving: true } : t)))
-      const removeTimer = setTimeout(() => remove(id), EXIT_MS)
       if (timers.current[id]) clearTimeout(timers.current[id].leave)
-      timers.current[id] = { ...timers.current[id], remove: removeTimer } as any
+      const removeTimer = setTimeout(() => remove(id), EXIT_MS)
+      timers.current[id] = { ...timers.current[id], remove: removeTimer }
     },
     [remove],
   )
 
-  const addToast = useCallback((t: Omit<Toast, 'id'>) => {
-    const id = String(Date.now()) + Math.random().toString(36).slice(2, 8)
-    setToasts((s) => [...s, { id, ...t }])
-    const leaveTimer = setTimeout(() => beginLeave(id), DURATION)
-    timers.current[id] = { leave: leaveTimer, remove: undefined as any }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  const addToast = useCallback(
+    (t: Omit<Toast, 'id'>) => {
+      const id = String(Date.now()) + Math.random().toString(36).slice(2, 8)
+      setToasts((s) => {
+        const next = [...s, { id, ...t }]
+        // Force out the oldest ones over the cap immediately, rather than animating them —
+        // a burst of toasts means the newest is what the user needs to see right now.
+        const overflow = next.length - MAX_VISIBLE
+        if (overflow <= 0) return next
+        next.slice(0, overflow).forEach((old) => {
+          clearTimeout(timers.current[old.id]?.leave)
+          clearTimeout(timers.current[old.id]?.remove)
+          delete timers.current[old.id]
+        })
+        return next.slice(overflow)
+      })
+      const leaveTimer = setTimeout(() => beginLeave(id), DURATION)
+      timers.current[id] = { leave: leaveTimer }
+    },
+    [beginLeave],
+  )
 
   return (
     <ToastContext.Provider value={{ addToast }}>
       {children}
-      <div className="fixed bottom-6 right-6 flex flex-col gap-2.5 z-50 w-[calc(100vw-3rem)] max-w-sm">
+      <div className="fixed bottom-6 right-6 flex flex-col gap-2.5 z-50 w-[calc(100vw-3rem)] max-w-sm" role="status" aria-live="polite" aria-atomic="false">
         {toasts.map((t) => {
           const cfg = toneConfig[t.tone || 'info']
           const Icon = cfg.icon

@@ -7,6 +7,7 @@ import './index.css'
 import App from './App.tsx'
 import { initAuth } from './lib/auth'
 import { AuthProvider } from './context/AuthContext'
+import { RewardsProvider } from './context/RewardsContext'
 import { ToastProvider } from './components/Toasts'
 
 initAuth()
@@ -14,9 +15,11 @@ initAuth()
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthProvider>
-      <ToastProvider>
-        <App />
-      </ToastProvider>
+      <RewardsProvider>
+        <ToastProvider>
+          <App />
+        </ToastProvider>
+      </RewardsProvider>
     </AuthProvider>
   </StrictMode>,
 )

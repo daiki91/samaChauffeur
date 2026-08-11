@@ -1,17 +1,11 @@
-import { X, MapPin, Navigation, Car, Wallet, Clock3, Star, Printer, Receipt } from 'lucide-react'
+import { MapPin, Navigation, Car, Wallet, Clock3, Star, Printer, Receipt } from 'lucide-react'
 import Button from './ui/Button'
 import Badge from './ui/Badge'
 import StarRating from './ui/StarRating'
+import Modal from './ui/Modal'
 import RatingCard from './RatingCard'
 import type { ActiveTrip } from './RideStatusBar'
-
-const VEHICLE_LABELS: Record<string, string> = {
-  CAR: 'Voiture',
-  SEDAN: 'Berline',
-  SUV: '4x4',
-  MINIBUS: 'Minibus',
-  BUS: 'Bus rapide',
-}
+import { VEHICLE_LABELS } from '../lib/format'
 
 const PAYMENT_LABELS: Record<string, string> = {
   CASH: 'Espèces',
@@ -43,13 +37,10 @@ export default function TripDetailModal({ trip, onClose, onRate, onSkipRating, r
   const perKm = trip.price != null && trip.distance_km ? trip.price / trip.distance_km : null
 
   return (
-    <div className="fixed inset-0 bg-stone-900/50 flex items-end sm:items-center justify-center z-[1000] p-0 sm:p-4">
-      <div id="print-receipt" className="bg-white rounded-t-3xl sm:rounded-2xl shadow-floating w-full max-w-md p-6 relative animate-fade-in-up max-h-[90vh] overflow-y-auto">
-        <div className="print-hide">
-          <button onClick={onClose} className="absolute right-4 top-4 text-stone-400 hover:text-stone-600" aria-label="Fermer">
-            <X size={18} />
-          </button>
-        </div>
+    <Modal open={!!trip} onClose={onClose} bottomSheet maxWidth="max-w-md" labelledBy="trip-detail-title" id="print-receipt" className="max-h-[90vh] overflow-y-auto">
+        <h2 id="trip-detail-title" className="sr-only">
+          Détail de la course : {trip.origin.split(',')[0]} → {trip.destination.split(',')[0]}
+        </h2>
 
         <div className="hidden print:flex items-center gap-2 mb-4">
           <span className="grid place-items-center w-8 h-8 rounded-lg bg-warm-gradient text-white">
@@ -177,7 +168,6 @@ export default function TripDetailModal({ trip, onClose, onRate, onSkipRating, r
             Fermer
           </Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

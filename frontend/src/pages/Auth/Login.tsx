@@ -58,7 +58,7 @@ export default function Login() {
       subtitle="Connectez-vous pour réserver ou prendre le volant."
       footer={
         <>
-          Pas encore de compte ?{''}
+          Pas encore de compte ?{' '}
           <Link to="/auth/register" className="font-semibold text-brand-600">
             Créer un compte
           </Link>

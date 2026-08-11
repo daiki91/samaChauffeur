@@ -40,12 +40,6 @@ module.exports = {
           600: '#de9a1f',
           700: '#b87814',
         },
-        // Legacy alias so any leftover `brand-blue-*` class still renders sensibly
-        'brand-blue': {
-          50: '#fff4ed', 100: '#ffe6d5', 200: '#ffcbaa', 300: '#ffa873',
-          400: '#ff7a3d', 500: '#f2590e', 600: '#d6440a', 700: '#b23409',
-          800: '#8c280d', 900: '#71220e',
-        },
       },
       boxShadow: {
         card: '0 1px 2px rgba(20, 15, 10, 0.04), 0 4px 16px rgba(20, 15, 10, 0.06)',
