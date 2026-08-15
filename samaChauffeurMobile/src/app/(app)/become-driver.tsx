@@ -9,7 +9,7 @@ import Button from '@/components/ui/Button';
 import { applyChauffeur } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { VEHICLE_TYPES } from '@/constants/config';
-import { colors, fonts, fontSizes, radii, spacing } from '@/constants/theme';
+import { colors, fonts, fontSizes, radii, shadows, spacing } from '@/constants/theme';
 import type { VehicleType } from '@/types';
 
 const ICONS: Record<VehicleType, keyof typeof Ionicons.glyphMap> = {
@@ -91,6 +91,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignSelf: 'center',
     marginBottom: spacing.md,
+    ...shadows.card,
   },
   title: { fontFamily: fonts.bold, fontSize: fontSizes.xl, color: colors.text, textAlign: 'center' },
   subtitle: { fontFamily: fonts.regular, fontSize: fontSizes.sm, color: colors.muted, textAlign: 'center', marginTop: spacing.xs },

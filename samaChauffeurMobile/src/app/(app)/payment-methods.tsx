@@ -57,10 +57,16 @@ export default function PaymentMethodsScreen() {
         <ScrollView contentContainerStyle={styles.container}>
           {methods.length === 0 && <Text style={styles.emptyText}>Aucun moyen de paiement enregistré.</Text>}
           {methods.map((m) => (
-            <Card key={m.id} style={styles.row}>
-              <Ionicons name="wallet-outline" size={18} color={colors.brand[600]} />
+            <Card key={m.id} style={styles.row} variant="outlined">
+              <View style={styles.methodIcon}>
+                <Ionicons name="wallet-outline" size={16} color={colors.brand[600]} />
+              </View>
               <Text style={styles.rowText}>{m.provider}</Text>
-              {m.is_default && <Text style={styles.defaultTag}>Par défaut</Text>}
+              {m.is_default && (
+                <View style={styles.defaultTag}>
+                  <Text style={styles.defaultTagText}>Par défaut</Text>
+                </View>
+              )}
             </Card>
           ))}
 
@@ -91,8 +97,17 @@ const styles = StyleSheet.create({
   container: { padding: spacing.xl },
   emptyText: { fontFamily: fonts.regular, fontSize: fontSizes.sm, color: colors.muted, textAlign: 'center', paddingVertical: spacing.xl },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
+  methodIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: colors.brand[50],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   rowText: { fontFamily: fonts.medium, fontSize: fontSizes.sm, color: colors.text },
-  defaultTag: { marginLeft: 'auto', fontFamily: fonts.medium, fontSize: fontSizes.xs, color: colors.secondary[600] },
+  defaultTag: { marginLeft: 'auto', backgroundColor: colors.secondary[50], borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
+  defaultTagText: { fontFamily: fonts.medium, fontSize: fontSizes.xs, color: colors.secondary[700] },
   sectionTitle: { fontFamily: fonts.semiBold, fontSize: fontSizes.md, color: colors.text, marginTop: spacing.lg, marginBottom: spacing.md },
   providerGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
 });

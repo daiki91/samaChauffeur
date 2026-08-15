@@ -117,7 +117,10 @@ export default function PassengerHome() {
             <Text style={styles.liveCount}>{drivers.length}</Text>
             <Text style={styles.liveLabel}>chauffeurs disponibles autour de vous</Text>
           </View>
-          <View style={styles.liveDot} />
+          <View style={styles.liveIconWrap}>
+            <Ionicons name="car-sport" size={20} color={colors.white} />
+            <View style={styles.liveDot} />
+          </View>
         </View>
       </LinearGradient>
 
@@ -127,7 +130,8 @@ export default function PassengerHome() {
       </View>
 
       {bookingOpen && (
-        <Card style={{ marginHorizontal: spacing.xl, marginTop: spacing.md }}>
+        <Card style={styles.sheetCard} floating>
+          <View style={styles.sheetHandle} />
           <Text style={styles.cardTitle}>
             <Ionicons name="navigate-outline" size={16} color={colors.brand[600]} /> Demander une course
           </Text>
@@ -144,7 +148,10 @@ export default function PassengerHome() {
           {estimating && <Spinner />}
           {estimate && !estimating && (
             <View style={styles.estimateBox}>
-              <Text style={styles.estimateText}>{estimate.distanceKm.toFixed(1)} km</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="speedometer-outline" size={14} color={colors.brand[700]} />
+                <Text style={styles.estimateText}>{estimate.distanceKm.toFixed(1)} km</Text>
+              </View>
               <Text style={styles.estimatePrice}>~{Math.round(estimate.price).toLocaleString('fr-FR')} XOF</Text>
             </View>
           )}
@@ -192,9 +199,43 @@ const styles = StyleSheet.create({
   },
   liveCount: { fontFamily: fonts.bold, fontSize: fontSizes.xxl, color: colors.white },
   liveLabel: { fontFamily: fonts.regular, fontSize: fontSizes.sm, color: 'rgba(255,255,255,0.85)' },
-  liveDot: { width: 14, height: 14, borderRadius: 7, backgroundColor: colors.secondary[400], borderWidth: 2, borderColor: colors.white },
-  mapSection: { padding: spacing.xl },
+  liveIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  liveDot: {
+    position: 'absolute',
+    right: -1,
+    top: -1,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.secondary[400],
+    borderWidth: 2,
+    borderColor: colors.brand[600],
+  },
+  mapSection: { padding: spacing.xl, paddingBottom: spacing.md },
   mapHint: { fontFamily: fonts.regular, fontSize: fontSizes.xs, color: colors.muted, marginTop: spacing.sm, textAlign: 'center' },
+  // pulled up over the map + rounded top corners so it reads as a bottom-sheet, the pattern
+  // Uber/Bolt/Yango/inDrive all use for the booking step instead of a plain inline form card
+  sheetCard: {
+    marginHorizontal: spacing.xl,
+    marginTop: -spacing.md,
+    borderTopLeftRadius: radii.xl2,
+    borderTopRightRadius: radii.xl2,
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    alignSelf: 'center',
+    marginBottom: spacing.md,
+  },
   cardTitle: { fontFamily: fonts.semiBold, fontSize: fontSizes.md, color: colors.text, marginBottom: spacing.lg },
   hintText: { fontFamily: fonts.regular, fontSize: fontSizes.xs, color: colors.muted, marginTop: -spacing.sm, marginBottom: spacing.md },
   estimateBox: {

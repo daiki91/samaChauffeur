@@ -10,9 +10,11 @@ type Props = {
   subtitle?: React.ReactNode;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  /** onboarding progress (register → phone → verify) shown as dots under the logo, à la inDrive/Bolt */
+  step?: { current: number; total: number };
 };
 
-export default function AuthLayout({ title, subtitle, children, footer }: Props) {
+export default function AuthLayout({ title, subtitle, children, footer, step }: Props) {
   return (
     <Screen padded={false}>
       <LinearGradient
@@ -26,6 +28,13 @@ export default function AuthLayout({ title, subtitle, children, footer }: Props)
           <Ionicons name="car-sport" size={22} color={colors.white} />
         </View>
         <Text style={styles.brand}>samaChauffeur</Text>
+        {step && (
+          <View style={styles.stepRow}>
+            {Array.from({ length: step.total }).map((_, i) => (
+              <View key={i} style={[styles.stepDot, i < step.current && styles.stepDotActive]} />
+            ))}
+          </View>
+        )}
       </LinearGradient>
 
       <View style={styles.body}>
@@ -60,6 +69,9 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.lg,
     color: colors.white,
   },
+  stepRow: { flexDirection: 'row', gap: 6, marginTop: spacing.md },
+  stepDot: { width: 20, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.3)' },
+  stepDotActive: { backgroundColor: colors.white },
   body: {
     padding: spacing.xl,
   },

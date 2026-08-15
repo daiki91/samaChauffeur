@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
+import Avatar from '@/components/ui/Avatar';
 import { useAuth } from '@/context/AuthContext';
 import { colors, fonts, fontSizes, spacing } from '@/constants/theme';
 
@@ -24,11 +25,15 @@ export default function ProfileTab() {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.avatarWrap}>
-        <View style={styles.avatar}>
-          <Ionicons name="person" size={30} color={colors.brand[600]} />
-        </View>
+        <Avatar name={user?.username} size="xl" tone="brand" />
         <Text style={styles.name}>{user?.username}</Text>
         <Text style={styles.phone}>{user?.phone}</Text>
+        {mode && (
+          <View style={styles.modePill}>
+            <Ionicons name={mode === 'driver' ? 'car-sport' : 'person'} size={12} color={colors.brand[700]} />
+            <Text style={styles.modePillText}>{mode === 'driver' ? 'Mode chauffeur' : 'Mode passager'}</Text>
+          </View>
+        )}
       </View>
 
       {canDriverMode && (
@@ -92,18 +97,20 @@ export default function ProfileTab() {
 
 const styles = StyleSheet.create({
   container: { padding: spacing.xl, paddingBottom: spacing.huge, gap: spacing.md },
-  avatarWrap: { alignItems: 'center', marginBottom: spacing.lg },
-  avatar: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: colors.brand[50],
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.sm,
-  },
-  name: { fontFamily: fonts.semiBold, fontSize: fontSizes.lg, color: colors.text },
+  avatarWrap: { alignItems: 'center', marginBottom: spacing.lg, gap: 4 },
+  name: { fontFamily: fonts.semiBold, fontSize: fontSizes.lg, color: colors.text, marginTop: spacing.sm },
   phone: { fontFamily: fonts.regular, fontSize: fontSizes.sm, color: colors.muted },
+  modePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.brand[50],
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginTop: spacing.xs,
+  },
+  modePillText: { fontFamily: fonts.medium, fontSize: fontSizes.xs, color: colors.brand[700] },
   row: { flexDirection: 'row', alignItems: 'center' },
   rowTitle: { fontFamily: fonts.medium, fontSize: fontSizes.base, color: colors.text },
   rowSubtitle: { fontFamily: fonts.regular, fontSize: fontSizes.xs, color: colors.muted, marginTop: 2 },

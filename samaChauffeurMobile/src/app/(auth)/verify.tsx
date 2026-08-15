@@ -10,6 +10,7 @@ export default function VerifyScreen() {
   const params = useLocalSearchParams<{ phone?: string }>();
   const phone = params.phone ?? '';
   const [code, setCode] = useState('');
+  const [focused, setFocused] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,12 +35,16 @@ export default function VerifyScreen() {
           Code envoyé au <Text style={{ fontFamily: fonts.semiBold, color: colors.text }}>{phone}</Text>
         </Text>
       }
+      step={{ current: 3, total: 3 }}
     >
       <TextInput
-        style={styles.codeInput}
+        style={[styles.codeInput, focused && styles.codeInputFocused, error && styles.codeInputError]}
         value={code}
         onChangeText={(v) => setCode(v.replace(/\D/g, '').slice(0, 6))}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         placeholder="——————"
+        placeholderTextColor={colors.muted}
         keyboardType="number-pad"
         maxLength={6}
       />
@@ -48,7 +53,7 @@ export default function VerifyScreen() {
           <Text style={styles.errorText}>{error}</Text>
         </View>
       )}
-      <Button onPress={handleSubmit} fullWidth size="lg" loading={loading}>
+      <Button onPress={handleSubmit} fullWidth size="lg" loading={loading} disabled={code.length < 4}>
         Vérifier et continuer
       </Button>
     </AuthLayout>
@@ -69,6 +74,8 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: spacing.lg,
   },
+  codeInputFocused: { borderColor: colors.brand[400], backgroundColor: colors.brand[50] },
+  codeInputError: { borderColor: colors.danger },
   errorBox: { backgroundColor: colors.dangerBg, borderRadius: radii.md, padding: spacing.sm, marginBottom: spacing.md },
   errorText: { color: colors.danger, fontFamily: fonts.regular, fontSize: fontSizes.sm },
 });

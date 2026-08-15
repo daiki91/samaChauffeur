@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import type { Socket } from 'socket.io-client';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
+import Avatar from '@/components/ui/Avatar';
 import MapPreview from '@/components/map/MapPreview';
 import { useLocation } from '@/hooks/useLocation';
 import { useAuth } from '@/context/AuthContext';
@@ -12,7 +13,7 @@ import { connectDriverSocket } from '@/lib/socket';
 import { startBackgroundLocationTracking, stopBackgroundLocationTracking, setBackgroundLocationSocket } from '@/lib/backgroundLocation';
 import { getAvailableTrips, claimTrip, setChauffeurAvailability, updateLocation } from '@/lib/api';
 import { haversineKm } from '@/lib/geo';
-import { colors, fonts, fontSizes, spacing } from '@/constants/theme';
+import { colors, fonts, fontSizes, radii, spacing } from '@/constants/theme';
 import type { Trip } from '@/types';
 
 // Must match MAX_CLAIM_RADIUS_KM on the backend (backend-node/src/modules/trips/trips.routes.ts) —
@@ -20,7 +21,7 @@ import type { Trip } from '@/types';
 const MAX_CLAIM_RADIUS_KM = 5;
 
 export default function DriverHome() {
-  const { chauffeur, updateChauffeur } = useAuth();
+  const { user, chauffeur, updateChauffeur } = useAuth();
   const { position } = useLocation(true);
   const [online, setOnline] = useState(!!chauffeur?.is_available);
   const [toggling, setToggling] = useState(false);
@@ -145,16 +146,38 @@ export default function DriverHome() {
   return (
     <ScrollView style={{ flex: 1, backgroundColor: colors.background }} contentContainerStyle={{ padding: spacing.xl }}>
       <View style={styles.headerRow}>
-        <View>
-          <Text style={styles.title}>Espace chauffeur</Text>
-          <Text style={styles.subtitle}>Gérez vos courses et votre disponibilité.</Text>
+        <View style={styles.headerLeft}>
+          <Avatar name={user?.username} size="md" tone={online ? 'secondary' : 'neutral'} badge badgeColor={online ? colors.secondary[500] : colors.muted} />
+          <View>
+            <Text style={styles.title}>Espace chauffeur</Text>
+            <Text style={styles.subtitle}>{online ? 'Vous êtes en ligne' : 'Vous êtes hors ligne'}</Text>
+          </View>
         </View>
-        <Button variant={online ? 'secondary' : 'outline'} size="sm" onPress={toggleOnline} loading={toggling} icon={<Ionicons name="power" size={14} color={online ? colors.white : colors.brand[700]} />}>
-          {online ? 'En ligne' : 'Hors ligne'}
-        </Button>
       </View>
 
-      <Card style={{ marginBottom: spacing.lg }} padded={false}>
+      <Card
+        style={[styles.onlineToggleCard, online ? styles.onlineToggleCardActive : styles.onlineToggleCardInactive]}
+        onPress={toggling ? undefined : toggleOnline}
+        padded={false}
+      >
+        <View style={styles.onlineToggleRow}>
+          <View style={styles.onlineToggleLabel}>
+            <Ionicons name={online ? 'radio-button-on' : 'power-outline'} size={20} color={online ? colors.white : colors.brand[700]} />
+            <Text style={[styles.onlineToggleText, { color: online ? colors.white : colors.brand[700] }]}>
+              {online ? 'En ligne — vous recevez des courses' : 'Passer en ligne'}
+            </Text>
+          </View>
+          {toggling ? (
+            <ActivityIndicator color={online ? colors.white : colors.brand[600]} />
+          ) : (
+            <View style={[styles.togglePill, online && styles.togglePillActive]}>
+              <View style={[styles.toggleKnob, online && styles.toggleKnobActive]} />
+            </View>
+          )}
+        </View>
+      </Card>
+
+      <Card style={{ marginBottom: spacing.lg, marginTop: spacing.lg }} padded={false}>
         {online ? (
           <MapPreview myPosition={position} height={240} />
         ) : (
@@ -175,7 +198,10 @@ export default function DriverHome() {
           position && t.origin_lat != null && t.origin_lng != null ? haversineKm(position, { lat: t.origin_lat, lng: t.origin_lng }) : null;
         const outOfRange = distFromDriver != null && distFromDriver > MAX_CLAIM_RADIUS_KM;
         return (
-          <Card key={t.id} style={[styles.tripRow, outOfRange && styles.tripRowOutOfRange]}>
+          <Card key={t.id} style={[styles.tripRow, outOfRange && styles.tripRowOutOfRange]} variant="outlined">
+            <View style={styles.tripRouteIcon}>
+              <Ionicons name="navigate" size={14} color={colors.brand[600]} />
+            </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.tripRoute} numberOfLines={1}>
                 {t.origin} → {t.destination}
@@ -196,15 +222,47 @@ export default function DriverHome() {
 }
 
 const styles = StyleSheet.create({
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.xl },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   title: { fontFamily: fonts.bold, fontSize: fontSizes.xl, color: colors.text },
   subtitle: { fontFamily: fonts.regular, fontSize: fontSizes.sm, color: colors.muted, marginTop: 2 },
+  onlineToggleCard: { borderRadius: radii.xl2, borderWidth: 1.5 },
+  onlineToggleCardActive: { backgroundColor: colors.secondary[600], borderColor: colors.secondary[600] },
+  onlineToggleCardInactive: { backgroundColor: colors.surface, borderColor: colors.brand[200] },
+  onlineToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.lg,
+  },
+  onlineToggleLabel: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 },
+  onlineToggleText: { fontFamily: fonts.semiBold, fontSize: fontSizes.sm },
+  togglePill: {
+    width: 46,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(0,0,0,0.12)',
+    padding: 3,
+    justifyContent: 'center',
+  },
+  togglePillActive: { backgroundColor: 'rgba(255,255,255,0.35)' },
+  toggleKnob: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.white },
+  toggleKnobActive: { alignSelf: 'flex-end' },
   offlineMap: { height: 200, alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingHorizontal: spacing.xl },
   offlineText: { fontFamily: fonts.regular, fontSize: fontSizes.sm, color: colors.muted, textAlign: 'center' },
   sectionTitle: { fontFamily: fonts.semiBold, fontSize: fontSizes.md, color: colors.text, marginBottom: spacing.md },
   emptyText: { fontFamily: fonts.regular, fontSize: fontSizes.sm, color: colors.muted, textAlign: 'center', paddingVertical: spacing.xl },
-  tripRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
+  tripRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.sm },
   tripRowOutOfRange: { opacity: 0.6 },
+  tripRouteIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.brand[50],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   tripRoute: { fontFamily: fonts.medium, fontSize: fontSizes.sm, color: colors.text },
   tripMeta: { fontFamily: fonts.regular, fontSize: fontSizes.xs, color: colors.muted, marginTop: 2 },
   pendingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xxl, gap: spacing.md, backgroundColor: colors.background },

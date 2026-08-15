@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
@@ -48,15 +49,23 @@ function PassengerHistory() {
       <Text style={styles.pageTitle}>Historique des courses</Text>
 
       {summary && (
-        <Card style={{ backgroundColor: colors.secondary[50], marginBottom: spacing.lg }}>
-          <Text style={styles.summaryLabel}>Total dépensé</Text>
-          <Text style={styles.summaryValue}>{summary.total_spent} XOF</Text>
+        <Card style={styles.summaryCard} floating>
+          <View>
+            <Text style={styles.summaryLabel}>Total dépensé</Text>
+            <Text style={styles.summaryValue}>{summary.total_spent.toLocaleString('fr-FR')} XOF</Text>
+          </View>
+          <View style={styles.summaryIcon}>
+            <Ionicons name="receipt-outline" size={22} color={colors.secondary[700]} />
+          </View>
         </Card>
       )}
 
       {trips.length === 0 && <Text style={styles.emptyText}>Aucune course pour l&apos;instant.</Text>}
       {trips.map((t) => (
-        <Card key={t.id} style={styles.row}>
+        <Card key={t.id} style={styles.row} variant="outlined">
+          <View style={styles.routeIcon}>
+            <Ionicons name="navigate" size={14} color={colors.brand[600]} />
+          </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.routeText} numberOfLines={1}>
               {t.origin} → {t.destination}
@@ -116,7 +125,10 @@ function DriverEarnings() {
       <Text style={styles.pageTitle}>Paiements en attente</Text>
       {pending.length === 0 && <Text style={styles.emptyText}>Aucun paiement en attente.</Text>}
       {pending.map((tx) => (
-        <Card key={tx.id} style={styles.row}>
+        <Card key={tx.id} style={styles.row} variant="outlined">
+          <View style={styles.routeIcon}>
+            <Ionicons name="wallet-outline" size={14} color={colors.brand[600]} />
+          </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.routeText}>Course #{tx.metadata?.trip_id}</Text>
             <Text style={styles.metaText}>
@@ -143,10 +155,33 @@ export default function HistoryTab() {
 const styles = StyleSheet.create({
   container: { padding: spacing.xl, paddingBottom: spacing.huge },
   pageTitle: { fontFamily: fonts.bold, fontSize: fontSizes.xl, color: colors.text, marginBottom: spacing.lg },
+  summaryCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.secondary[50],
+    marginBottom: spacing.lg,
+  },
   summaryLabel: { fontFamily: fonts.medium, fontSize: fontSizes.xs, color: colors.secondary[700] },
   summaryValue: { fontFamily: fonts.bold, fontSize: fontSizes.xl, color: colors.secondary[800], marginTop: 2 },
+  summaryIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.secondary[100],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   emptyText: { fontFamily: fonts.regular, fontSize: fontSizes.sm, color: colors.muted, textAlign: 'center', paddingVertical: spacing.huge },
-  row: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
+  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.sm },
+  routeIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.brand[50],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   routeText: { fontFamily: fonts.medium, fontSize: fontSizes.sm, color: colors.text },
   metaText: { fontFamily: fonts.regular, fontSize: fontSizes.xs, color: colors.muted, marginTop: 2 },
 });

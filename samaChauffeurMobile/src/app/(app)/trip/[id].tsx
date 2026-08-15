@@ -8,6 +8,9 @@ import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
+import Avatar from '@/components/ui/Avatar';
+import StatusStepper from '@/components/ui/StatusStepper';
+import Divider from '@/components/ui/Divider';
 import MapPreview, { type MapMarker } from '@/components/map/MapPreview';
 import { useAuth } from '@/context/AuthContext';
 import { useLocation } from '@/hooks/useLocation';
@@ -125,13 +128,33 @@ export default function TripTrackingScreen() {
 
       <ScrollView contentContainerStyle={styles.container}>
         <Card style={styles.statusCard}>
-          <View>
-            <Text style={styles.routeText}>
-              {trip.origin} → {trip.destination}
-            </Text>
-            <Text style={styles.metaText}>{trip.price ? `${trip.price} XOF` : 'Prix non estimé'}</Text>
+          <View style={styles.statusHeaderRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.routeText}>
+                {trip.origin} → {trip.destination}
+              </Text>
+              <Text style={styles.metaText}>{trip.price ? `${trip.price} XOF` : 'Prix non estimé'}</Text>
+            </View>
+            <Badge status={trip.status} />
           </View>
-          <Badge status={trip.status} />
+
+          <Divider />
+          <StatusStepper status={trip.status} />
+
+          {trip.status !== 'CANCELLED' && trip.status !== 'REQUESTED' && (
+            <>
+              <Divider />
+              <View style={styles.driverRow}>
+                <Avatar icon={mode === 'driver' ? 'person' : 'car'} tone="secondary" badge badgeColor={colors.secondary[500]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.driverName}>{mode === 'driver' ? 'Passager' : 'Votre chauffeur'}</Text>
+                  <Text style={styles.driverSub}>
+                    {trip.status === 'STARTED' ? 'Course en cours' : trip.status === 'COMPLETED' ? 'Course terminée' : 'En route vers vous'}
+                  </Text>
+                </View>
+              </View>
+            </>
+          )}
         </Card>
 
         <MapPreview
@@ -182,8 +205,12 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontFamily: fonts.semiBold, fontSize: fontSizes.lg, color: colors.text },
   container: { padding: spacing.xl },
-  statusCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.lg },
+  statusCard: { marginBottom: spacing.lg },
+  statusHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   routeText: { fontFamily: fonts.semiBold, fontSize: fontSizes.base, color: colors.text, maxWidth: 220 },
   metaText: { fontFamily: fonts.regular, fontSize: fontSizes.sm, color: colors.muted, marginTop: 2 },
+  driverRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  driverName: { fontFamily: fonts.semiBold, fontSize: fontSizes.base, color: colors.text },
+  driverSub: { fontFamily: fonts.regular, fontSize: fontSizes.xs, color: colors.muted, marginTop: 2 },
   actionsRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.lg },
 });

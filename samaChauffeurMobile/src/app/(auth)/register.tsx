@@ -36,6 +36,7 @@ export default function RegisterScreen() {
     <AuthLayout
       title="Créer un compte"
       subtitle="Rejoignez samaChauffeur en moins d'une minute."
+      step={{ current: 1, total: 3 }}
       footer={
         <Text style={{ fontFamily: fonts.regular, color: colors.muted }}>
           Déjà inscrit ?{' '}

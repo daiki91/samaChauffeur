@@ -32,7 +32,11 @@ export default function PhoneScreen() {
   };
 
   return (
-    <AuthLayout title="Vérifier votre numéro" subtitle="Entrez le numéro utilisé lors de l'inscription pour recevoir le code de vérification.">
+    <AuthLayout
+      title="Vérifier votre numéro"
+      subtitle="Entrez le numéro utilisé lors de l'inscription pour recevoir le code de vérification."
+      step={{ current: 2, total: 3 }}
+    >
       <Input
         label="Téléphone"
         value={phone}
