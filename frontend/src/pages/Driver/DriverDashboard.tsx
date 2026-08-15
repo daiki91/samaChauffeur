@@ -20,7 +20,6 @@ import { MapPinned, Wallet, Route as RouteIcon, MoonStar, Navigation, UserCheck,
 import type { Socket } from 'socket.io-client'
 import { connectDriverSocket, connectTripSocket } from '../../lib/socket'
 import { haversineKm } from '../../lib/geo'
-import { useAuth } from '../../context/AuthContext'
 
 const ONGOING_STATUSES = ['REQUESTED', 'ASSIGNED', 'ACCEPTED', 'ARRIVED', 'STARTED']
 
