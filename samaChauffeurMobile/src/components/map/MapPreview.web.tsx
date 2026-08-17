@@ -17,14 +17,17 @@ type Props = {
   route?: LatLng[] | null;
   onPress?: (point: LatLng) => void;
   height?: number;
+  /** Fills the parent instead of using `height` — no rounded corners/clipping, for a
+   *  full-bleed map behind floating overlays (the Uber-style Home screen pattern). */
+  fill?: boolean;
 };
 
 // react-native-maps relies on native-only RN internals (codegenNativeCommands)
 // that cannot be bundled for web. Keep this file free of any import of
 // 'react-native-maps' so Metro never pulls it into the web bundle.
-export default function MapPreview({ height = 260 }: Props) {
+export default function MapPreview({ height = 260, fill = false }: Props) {
   return (
-    <View style={[styles.wrap, { height }]}>
+    <View style={[fill ? styles.wrapFill : styles.wrap, !fill && { height }]}>
       <MapPlaceholder label="Carte disponible sur mobile" />
     </View>
   );
@@ -34,6 +37,10 @@ const styles = StyleSheet.create({
   wrap: {
     borderRadius: radii.xl,
     overflow: 'hidden',
+    backgroundColor: colors.brand[50],
+  },
+  wrapFill: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: colors.brand[50],
   },
 });

@@ -19,11 +19,14 @@ type Props = {
   route?: LatLng[] | null;
   onPress?: (point: LatLng) => void;
   height?: number;
+  /** Fills the parent instead of using `height` — no rounded corners/clipping, for a
+   *  full-bleed map behind floating overlays (the Uber-style Home screen pattern). */
+  fill?: boolean;
 };
 
 const DEFAULT_CENTER = { lat: 3.848, lng: 11.5021 }; // Yaoundé fallback
 
-function InnerMap({ myPosition, markers = [], route, onPress, height = 260 }: Props) {
+function InnerMap({ myPosition, markers = [], route, onPress, height = 260, fill = false }: Props) {
   const mapRef = useRef<MapView | null>(null);
 
   const center = myPosition ?? markers[0]?.position ?? DEFAULT_CENTER;
@@ -39,7 +42,7 @@ function InnerMap({ myPosition, markers = [], route, onPress, height = 260 }: Pr
   );
 
   return (
-    <View style={[styles.wrap, { height }]}>
+    <View style={[fill ? styles.wrapFill : styles.wrap, !fill && { height }]}>
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFill}
@@ -69,7 +72,7 @@ export default function MapPreview(props: Props) {
   return (
     <MapErrorBoundary
       fallback={
-        <View style={[styles.wrap, { height: props.height ?? 260 }]}>
+        <View style={[props.fill ? styles.wrapFill : styles.wrap, !props.fill && { height: props.height ?? 260 }]}>
           <MapPlaceholder label="Carte momentanément indisponible" />
         </View>
       }
@@ -83,6 +86,10 @@ const styles = StyleSheet.create({
   wrap: {
     borderRadius: radii.xl,
     overflow: 'hidden',
+    backgroundColor: colors.brand[50],
+  },
+  wrapFill: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: colors.brand[50],
   },
 });

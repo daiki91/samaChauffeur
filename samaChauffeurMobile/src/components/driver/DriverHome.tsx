@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, { LinearTransition } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import type { Socket } from 'socket.io-client';
 import Card from '@/components/ui/Card';
@@ -14,7 +16,7 @@ import { connectDriverSocket } from '@/lib/socket';
 import { startBackgroundLocationTracking, stopBackgroundLocationTracking, setBackgroundLocationSocket } from '@/lib/backgroundLocation';
 import { acceptTrip, claimTrip, getAvailableTrips, getMyActiveTrip, setChauffeurAvailability, updateLocation } from '@/lib/api';
 import { haversineKm } from '@/lib/geo';
-import { colors, fonts, fontSizes, radii, spacing } from '@/constants/theme';
+import { colors, fonts, fontSizes, radii, shadows, spacing } from '@/constants/theme';
 import type { Trip } from '@/types';
 
 const ACTIVE_STATUSES = ['ASSIGNED', 'ACCEPTED', 'ARRIVED', 'STARTED'];
@@ -26,6 +28,7 @@ const MAX_CLAIM_RADIUS_KM = 5;
 export default function DriverHome() {
   const { user, chauffeur, updateChauffeur } = useAuth();
   const { position } = useLocation(true);
+  const insets = useSafeAreaInsets();
   const [online, setOnline] = useState(!!chauffeur?.is_available);
   const [toggling, setToggling] = useState(false);
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -180,88 +183,104 @@ export default function DriverHome() {
   }
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: colors.background }} contentContainerStyle={{ padding: spacing.xl }}>
-      <View style={styles.headerRow}>
-        <View style={styles.headerLeft}>
-          <Avatar name={user?.username} size="md" tone={online ? 'secondary' : 'neutral'} badge badgeColor={online ? colors.secondary[500] : colors.muted} />
-          <View>
-            <Text style={styles.title}>Espace chauffeur</Text>
-            <Text style={styles.subtitle}>{online ? 'Vous êtes en ligne' : 'Vous êtes hors ligne'}</Text>
-          </View>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <MapPreview fill myPosition={position} />
+
+      {/* Top overlay — condensed driver identity, replaces the old full-width header block. */}
+      <View style={[styles.topOverlay, { top: insets.top + spacing.md }]} pointerEvents="none">
+        <Avatar name={user?.username} size="sm" tone={online ? 'secondary' : 'neutral'} badge badgeColor={online ? colors.secondary[500] : colors.muted} />
+        <View>
+          <Text style={styles.title}>Espace chauffeur</Text>
+          <Text style={styles.subtitle}>{online ? 'Vous êtes en ligne' : 'Vous êtes hors ligne'}</Text>
         </View>
       </View>
 
-      <Card
-        style={[styles.onlineToggleCard, online ? styles.onlineToggleCardActive : styles.onlineToggleCardInactive]}
-        onPress={toggling ? undefined : toggleOnline}
-        padded={false}
-      >
-        <View style={styles.onlineToggleRow}>
-          <View style={styles.onlineToggleLabel}>
-            <Ionicons name={online ? 'radio-button-on' : 'power-outline'} size={20} color={online ? colors.white : colors.brand[700]} />
-            <Text style={[styles.onlineToggleText, { color: online ? colors.white : colors.brand[700] }]}>
-              {online ? 'En ligne — vous recevez des courses' : 'Passer en ligne'}
+      {/* Bottom overlay — available trips (only when there are any) above the online toggle,
+          the single persistent primary action. */}
+      <View style={[styles.bottomOverlay, { paddingHorizontal: spacing.xl }]}>
+        {sortedTrips.length > 0 && (
+          <Animated.View layout={LinearTransition.duration(240)} style={styles.tripsPanel}>
+            <Text style={styles.sectionTitle}>
+              Courses disponibles
+              {position ? ` · à moins de ${MAX_CLAIM_RADIUS_KM} km` : ''}
             </Text>
-          </View>
-          {toggling ? (
-            <ActivityIndicator color={online ? colors.white : colors.brand[600]} />
-          ) : (
-            <View style={[styles.togglePill, online && styles.togglePillActive]}>
-              <View style={[styles.toggleKnob, online && styles.toggleKnobActive]} />
-            </View>
-          )}
-        </View>
-      </Card>
-
-      <Card style={{ marginBottom: spacing.lg, marginTop: spacing.lg }} padded={false}>
-        {online ? (
-          <MapPreview myPosition={position} height={240} />
-        ) : (
-          <View style={styles.offlineMap}>
-            <Ionicons name="moon-outline" size={28} color={colors.muted} />
-            <Text style={styles.offlineText}>Passez en ligne pour partager votre position et recevoir des courses.</Text>
-          </View>
+            <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={false}>
+              {sortedTrips.map((t) => {
+                const distFromDriver =
+                  position && t.origin_lat != null && t.origin_lng != null ? haversineKm(position, { lat: t.origin_lat, lng: t.origin_lng }) : null;
+                const outOfRange = distFromDriver != null && distFromDriver > MAX_CLAIM_RADIUS_KM;
+                return (
+                  <Card key={t.id} style={[styles.tripRow, outOfRange && styles.tripRowOutOfRange]} variant="outlined">
+                    <View style={styles.tripRouteIcon}>
+                      <Ionicons name="navigate" size={14} color={colors.brand[600]} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.tripRoute} numberOfLines={1}>
+                        {t.origin} → {t.destination}
+                      </Text>
+                      <Text style={styles.tripMeta}>
+                        {t.distance_km ? `${Number(t.distance_km).toFixed(1)} km` : '—'} · {t.price ? `${t.price} XOF` : 'Prix non estimé'}
+                        {distFromDriver != null ? ` · à ${distFromDriver.toFixed(1)} km${outOfRange ? ' (hors secteur)' : ''}` : ''}
+                      </Text>
+                    </View>
+                    <Button size="sm" onPress={() => handleClaim(t.id)} loading={claimingId === t.id} disabled={outOfRange}>
+                      Prendre
+                    </Button>
+                  </Card>
+                );
+              })}
+            </ScrollView>
+          </Animated.View>
         )}
-      </Card>
 
-      <Text style={styles.sectionTitle}>
-        Courses disponibles
-        {position ? ` · acceptables à moins de ${MAX_CLAIM_RADIUS_KM} km` : ''}
-      </Text>
-      {sortedTrips.length === 0 && <Text style={styles.emptyText}>Aucune course en attente pour l&apos;instant.</Text>}
-      {sortedTrips.map((t) => {
-        const distFromDriver =
-          position && t.origin_lat != null && t.origin_lng != null ? haversineKm(position, { lat: t.origin_lat, lng: t.origin_lng }) : null;
-        const outOfRange = distFromDriver != null && distFromDriver > MAX_CLAIM_RADIUS_KM;
-        return (
-          <Card key={t.id} style={[styles.tripRow, outOfRange && styles.tripRowOutOfRange]} variant="outlined">
-            <View style={styles.tripRouteIcon}>
-              <Ionicons name="navigate" size={14} color={colors.brand[600]} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.tripRoute} numberOfLines={1}>
-                {t.origin} → {t.destination}
-              </Text>
-              <Text style={styles.tripMeta}>
-                {t.distance_km ? `${Number(t.distance_km).toFixed(1)} km` : '—'} · {t.price ? `${t.price} XOF` : 'Prix non estimé'}
-                {distFromDriver != null ? ` · à ${distFromDriver.toFixed(1)} km${outOfRange ? ' (hors secteur)' : ''}` : ''}
+        <Card
+          style={[styles.onlineToggleCard, online ? styles.onlineToggleCardActive : styles.onlineToggleCardInactive]}
+          onPress={toggling ? undefined : toggleOnline}
+          padded={false}
+        >
+          <View style={styles.onlineToggleRow}>
+            <View style={styles.onlineToggleLabel}>
+              <Ionicons name={online ? 'radio-button-on' : 'power-outline'} size={20} color={online ? colors.white : colors.brand[700]} />
+              <Text style={[styles.onlineToggleText, { color: online ? colors.white : colors.brand[700] }]}>
+                {online ? 'En ligne — vous recevez des courses' : 'Passer en ligne'}
               </Text>
             </View>
-            <Button size="sm" onPress={() => handleClaim(t.id)} loading={claimingId === t.id} disabled={outOfRange}>
-              Prendre
-            </Button>
-          </Card>
-        );
-      })}
-    </ScrollView>
+            {toggling ? (
+              <ActivityIndicator color={online ? colors.white : colors.brand[600]} />
+            ) : (
+              <View style={[styles.togglePill, online && styles.togglePillActive]}>
+                <View style={[styles.toggleKnob, online && styles.toggleKnobActive]} />
+              </View>
+            )}
+          </View>
+        </Card>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  title: { fontFamily: fonts.bold, fontSize: fontSizes.xl, color: colors.text },
-  subtitle: { fontFamily: fonts.regular, fontSize: fontSizes.sm, color: colors.muted, marginTop: 2 },
+  topOverlay: {
+    position: 'absolute',
+    left: spacing.xl,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radii.pill,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    ...shadows.sm,
+  },
+  title: { fontFamily: fonts.semiBold, fontSize: fontSizes.sm, color: colors.text },
+  subtitle: { fontFamily: fonts.regular, fontSize: fontSizes.xs, color: colors.muted, marginTop: 1 },
+  bottomOverlay: { position: 'absolute', left: 0, right: 0, bottom: spacing.xl, gap: spacing.md },
+  tripsPanel: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.xl2,
+    padding: spacing.lg,
+    ...shadows.floating,
+  },
   onlineToggleCard: { borderRadius: radii.xl2, borderWidth: 1.5 },
   onlineToggleCardActive: { backgroundColor: colors.secondary[600], borderColor: colors.secondary[600] },
   onlineToggleCardInactive: { backgroundColor: colors.surface, borderColor: colors.brand[200] },
@@ -285,10 +304,7 @@ const styles = StyleSheet.create({
   togglePillActive: { backgroundColor: 'rgba(255,255,255,0.35)' },
   toggleKnob: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.white },
   toggleKnobActive: { alignSelf: 'flex-end' },
-  offlineMap: { height: 200, alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingHorizontal: spacing.xl },
-  offlineText: { fontFamily: fonts.regular, fontSize: fontSizes.sm, color: colors.muted, textAlign: 'center' },
-  sectionTitle: { fontFamily: fonts.semiBold, fontSize: fontSizes.md, color: colors.text, marginBottom: spacing.md },
-  emptyText: { fontFamily: fonts.regular, fontSize: fontSizes.sm, color: colors.muted, textAlign: 'center', paddingVertical: spacing.xl },
+  sectionTitle: { fontFamily: fonts.semiBold, fontSize: fontSizes.sm, color: colors.text, marginBottom: spacing.sm },
   tripRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.sm },
   tripRowOutOfRange: { opacity: 0.6 },
   tripRouteIcon: {
