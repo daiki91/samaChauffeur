@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import type { Socket } from 'socket.io-client';
@@ -12,12 +12,29 @@ import Avatar from '@/components/ui/Avatar';
 import StatusStepper from '@/components/ui/StatusStepper';
 import Divider from '@/components/ui/Divider';
 import MapPreview, { type MapMarker } from '@/components/map/MapPreview';
+import PaymentModal from '@/components/passenger/PaymentModal';
 import { useAuth } from '@/context/AuthContext';
 import { useLocation } from '@/hooks/useLocation';
-import { acceptTrip, createSupportTicket, endTrip, getTripDetail, rejectTrip, startTrip } from '@/lib/api';
+import {
+  acceptTrip,
+  cancelTrip,
+  endTrip,
+  getTransactions,
+  getTripDetail,
+  makePayment,
+  rateTrip,
+  rejectTrip,
+  shareTrip,
+  skipTripRating,
+  startTrip,
+  triggerSos,
+} from '@/lib/api';
 import { connectDriversSocket, connectTripSocket } from '@/lib/socket';
 import { colors, fonts, fontSizes, spacing } from '@/constants/theme';
+import { EMERGENCY_PHONE, SHARE_BASE } from '@/constants/config';
 import type { LatLng, Trip } from '@/types';
+
+const ONGOING_STATUSES = ['REQUESTED', 'ASSIGNED', 'ACCEPTED', 'STARTED'];
 
 export default function TripTrackingScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -27,6 +44,12 @@ export default function TripTrackingScreen() {
   const [loading, setLoading] = useState(true);
   const [driverPosition, setDriverPosition] = useState<LatLng | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [ratingValue, setRatingValue] = useState(0);
+  const [ratingSubmitting, setRatingSubmitting] = useState(false);
+  const [sosSubmitting, setSosSubmitting] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const tripSocketRef = useRef<Socket | null>(null);
   const driversSocketRef = useRef<Socket | null>(null);
 
@@ -45,6 +68,23 @@ export default function TripTrackingScreen() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch on mount
     load();
   }, [load]);
+
+  // Looks up the passenger's most recent transaction for this trip once it's completed, so
+  // the "Payer" button/rating step reflect whether a payment is already pending/paid.
+  useEffect(() => {
+    if (mode !== 'passenger' || trip?.status !== 'COMPLETED') return;
+    let cancelled = false;
+    getTransactions()
+      .then((t) => {
+        if (cancelled) return;
+        const mine = t.data.filter((tx: any) => Number(tx.metadata?.trip_id) === Number(id));
+        setPaymentStatus(mine[0]?.status ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, trip?.status, id]);
 
   useEffect(() => {
     let active = true;
@@ -97,18 +137,66 @@ export default function TripTrackingScreen() {
   };
 
   const requestCancellation = () => {
-    Alert.alert('Demander une annulation', "Aucune annulation directe n'est disponible — un ticket sera envoyé au support.", [
-      { text: 'Annuler', style: 'cancel' },
+    Alert.alert('Annuler la course', 'Voulez-vous vraiment annuler cette course ?', [
+      { text: 'Non', style: 'cancel' },
       {
-        text: 'Confirmer',
+        text: 'Oui, annuler',
         style: 'destructive',
-        onPress: () =>
-          runAction(
-            () => createSupportTicket({ title: 'Demande d\'annulation', description: `Le passager demande l'annulation de la course #${id}.`, trip: Number(id) }),
-            false,
-          ).then(() => Alert.alert('Demande envoyée', 'Le support a été notifié.')),
+        onPress: () => runAction(() => cancelTrip(id)).then(() => router.replace('/(app)/(tabs)')),
       },
     ]);
+  };
+
+  const handleSos = async () => {
+    setSosSubmitting(true);
+    try {
+      await triggerSos(id, myPosition?.lat, myPosition?.lng);
+    } catch {
+      // best-effort — the emergency call below must go through regardless
+    } finally {
+      setSosSubmitting(false);
+      Linking.openURL(`tel:${EMERGENCY_PHONE}`);
+    }
+  };
+
+  const handleShare = async () => {
+    setSharing(true);
+    try {
+      const r = await shareTrip(id);
+      const url = SHARE_BASE ? `${SHARE_BASE}/share/trip/${r.data.share_token}` : null;
+      await Share.share({ message: url ? `Suivez ma course samaChauffeur : ${url}` : `Code de suivi samaChauffeur : ${r.data.share_token}` });
+    } catch (err: any) {
+      Alert.alert('Erreur', err?.response?.data?.detail || 'Erreur lors de la création du lien de suivi');
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const handlePay = async (amount: number, method: string) => {
+    const resp = await makePayment({ amount, currency: 'XOF', method, metadata: { trip_id: Number(id) } });
+    setPaymentStatus(resp.data.status);
+  };
+
+  const handleRate = async () => {
+    if (!ratingValue) return;
+    setRatingSubmitting(true);
+    try {
+      const resp = await rateTrip(id, ratingValue);
+      setTrip((t) => (t ? { ...t, rating: resp.data } : t));
+    } catch (err: any) {
+      Alert.alert('Erreur', err?.response?.data?.detail || "Erreur lors de l'envoi de la note");
+    } finally {
+      setRatingSubmitting(false);
+    }
+  };
+
+  const handleSkipRating = async () => {
+    try {
+      const resp = await skipTripRating(id);
+      setTrip((t) => (t ? { ...t, rating: resp.data } : t));
+    } catch {
+      // non-blocking — the rating card just stays visible for another try
+    }
   };
 
   if (loading || !trip) return <Spinner style={{ flex: 1 }} />;
@@ -184,12 +272,61 @@ export default function TripTrackingScreen() {
           </Button>
         )}
 
-        {mode === 'passenger' && ['REQUESTED', 'ASSIGNED'].includes(trip.status) && (
-          <Button variant="outline" fullWidth style={{ marginTop: spacing.lg }} onPress={requestCancellation} loading={actionLoading}>
-            Demander l&apos;annulation
-          </Button>
+        {mode === 'passenger' && ONGOING_STATUSES.includes(trip.status) && (
+          <>
+            <View style={styles.actionsRow}>
+              <Button variant="outline" style={{ flex: 1 }} onPress={handleShare} loading={sharing} icon={<Ionicons name="share-social-outline" size={16} color={colors.brand[700]} />}>
+                Partager
+              </Button>
+              <Button variant="outline" style={{ flex: 1, borderColor: colors.danger }} onPress={handleSos} loading={sosSubmitting} icon={<Ionicons name="alert-circle-outline" size={16} color={colors.danger} />}>
+                SOS
+              </Button>
+            </View>
+            <Button variant="ghost" fullWidth style={{ marginTop: spacing.md }} onPress={requestCancellation} loading={actionLoading}>
+              Annuler la course
+            </Button>
+          </>
+        )}
+
+        {mode === 'passenger' && trip.status === 'COMPLETED' && (
+          <Card style={{ marginTop: spacing.lg }}>
+            {paymentStatus !== 'COMPLETED' ? (
+              <>
+                <Text style={styles.rateTitle}>Course terminée</Text>
+                <Text style={styles.metaText}>{paymentStatus === 'PENDING' ? 'Paiement en attente de validation par le chauffeur.' : 'Réglez cette course pour la clôturer.'}</Text>
+                {paymentStatus !== 'PENDING' && (
+                  <Button fullWidth style={{ marginTop: spacing.md }} onPress={() => setPaymentModalOpen(true)}>
+                    Payer cette course
+                  </Button>
+                )}
+              </>
+            ) : trip.rating ? (
+              <Text style={styles.rateTitle}>Merci pour votre note !</Text>
+            ) : (
+              <>
+                <Text style={styles.rateTitle}>Notez votre chauffeur</Text>
+                <View style={styles.starsRow}>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <Pressable key={n} onPress={() => setRatingValue(n)} hitSlop={6}>
+                      <Ionicons name={n <= ratingValue ? 'star' : 'star-outline'} size={30} color={colors.accent[500]} />
+                    </Pressable>
+                  ))}
+                </View>
+                <View style={styles.actionsRow}>
+                  <Button variant="outline" style={{ flex: 1 }} onPress={handleSkipRating}>
+                    Passer
+                  </Button>
+                  <Button style={{ flex: 1 }} onPress={handleRate} loading={ratingSubmitting} disabled={!ratingValue}>
+                    Envoyer
+                  </Button>
+                </View>
+              </>
+            )}
+          </Card>
         )}
       </ScrollView>
+
+      <PaymentModal visible={paymentModalOpen} trip={trip} onClose={() => setPaymentModalOpen(false)} onConfirm={handlePay} />
     </Screen>
   );
 }
@@ -213,4 +350,6 @@ const styles = StyleSheet.create({
   driverName: { fontFamily: fonts.semiBold, fontSize: fontSizes.base, color: colors.text },
   driverSub: { fontFamily: fonts.regular, fontSize: fontSizes.xs, color: colors.muted, marginTop: 2 },
   actionsRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.lg },
+  rateTitle: { fontFamily: fonts.semiBold, fontSize: fontSizes.base, color: colors.text, marginBottom: 4 },
+  starsRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, marginBottom: spacing.sm },
 });

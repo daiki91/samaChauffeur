@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Card from '@/components/ui/Card';
@@ -10,12 +10,16 @@ import Input from '@/components/ui/Input';
 import Spinner from '@/components/ui/Spinner';
 import MapPreview, { type MapMarker } from '@/components/map/MapPreview';
 import { useLocation } from '@/hooks/useLocation';
-import { createTrip, estimatePrice, getAvailableChauffeurs } from '@/lib/api';
+import { createTrip, estimatePrice, getAvailableChauffeurs, getClientProfile, getMyTrips, getRewardsStatus } from '@/lib/api';
 import { haversineKm } from '@/lib/geo';
+import { useAuth } from '@/context/AuthContext';
 import { colors, fonts, fontSizes, heroGradient, radii, spacing } from '@/constants/theme';
-import type { AvailableChauffeur, LatLng } from '@/types';
+import type { AvailableChauffeur, LatLng, PendingDiscount } from '@/types';
+
+const ONGOING_STATUSES = ['REQUESTED', 'ASSIGNED', 'ACCEPTED', 'STARTED'];
 
 export default function PassengerHome() {
+  const { user } = useAuth();
   const { position } = useLocation();
   const [drivers, setDrivers] = useState<AvailableChauffeur[]>([]);
   const [destination, setDestination] = useState<LatLng | null>(null);
@@ -26,6 +30,8 @@ export default function PassengerHome() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bookingOpen, setBookingOpen] = useState(false);
+  const [checkingActiveTrip, setCheckingActiveTrip] = useState(true);
+  const [nextRideDiscount, setNextRideDiscount] = useState<PendingDiscount>(null);
 
   useEffect(() => {
     (async () => {
@@ -37,6 +43,47 @@ export default function PassengerHome() {
       }
     })();
   }, [position]);
+
+  // A passenger reopening the app (or switching tabs) mid-ride shouldn't land on a fresh
+  // booking form — send them straight back to the trip they already have in flight, exactly
+  // like ClientDashboard on the web keeps the active trip pinned instead of the booking card.
+  useFocusEffect(
+    React.useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        try {
+          const t = await getMyTrips();
+          const ongoing = t.data.find((trip: { status: string }) => ONGOING_STATUSES.includes(trip.status));
+          if (!cancelled && ongoing) {
+            router.replace({ pathname: '/(app)/trip/[id]', params: { id: String(ongoing.id) } });
+            return;
+          }
+        } catch {
+          // ignore — worst case the passenger just sees the booking form
+        } finally {
+          if (!cancelled) setCheckingActiveTrip(false);
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
+
+  // What will auto-apply to the next trip — a rewards checkpoint discount takes priority over
+  // a saved promo code (see trips.routes.ts), mirrors ClientDashboard's nextRideDiscount banner.
+  useEffect(() => {
+    if (user?.role !== 'CLIENT') return;
+    (async () => {
+      try {
+        const [rewards, profile] = await Promise.all([getRewardsStatus(), getClientProfile()]);
+        const promo = profile.data.pending_promo_code ? { pct: profile.data.pending_promo_discount_pct, label: profile.data.pending_promo_code } : null;
+        setNextRideDiscount(rewards.data.pending_discount || promo);
+      } catch {
+        // non-critical — booking still works without the banner
+      }
+    })();
+  }, [user?.role]);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,6 +143,8 @@ export default function PassengerHome() {
     }
   };
 
+  if (checkingActiveTrip) return <Spinner style={{ flex: 1 }} />;
+
   return (
     <ScrollView style={{ flex: 1, backgroundColor: colors.background }} showsVerticalScrollIndicator={false}>
       <LinearGradient colors={heroGradient.colors} locations={heroGradient.locations} start={heroGradient.start} end={heroGradient.end} style={styles.hero}>
@@ -144,6 +193,15 @@ export default function PassengerHome() {
             icon={<Ionicons name="flag-outline" size={16} color={colors.muted} />}
           />
           {!destination && <Text style={styles.hintText}>Touchez la carte ci-dessus pour placer votre destination.</Text>}
+
+          {nextRideDiscount && (
+            <View style={styles.discountBox}>
+              <Ionicons name="gift-outline" size={16} color={colors.secondary[700]} />
+              <Text style={styles.discountText}>
+                Réduction de {nextRideDiscount.pct}% ({nextRideDiscount.label}) appliquée à cette course
+              </Text>
+            </View>
+          )}
 
           {estimating && <Spinner />}
           {estimate && !estimating && (
@@ -250,4 +308,14 @@ const styles = StyleSheet.create({
   estimateText: { fontFamily: fonts.medium, fontSize: fontSizes.sm, color: colors.brand[800] },
   estimatePrice: { fontFamily: fonts.bold, fontSize: fontSizes.md, color: colors.brand[700] },
   errorText: { fontFamily: fonts.regular, fontSize: fontSizes.sm, color: colors.danger, marginBottom: spacing.md },
+  discountBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.secondary[50],
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  discountText: { flex: 1, fontFamily: fonts.medium, fontSize: fontSizes.xs, color: colors.secondary[700] },
 });

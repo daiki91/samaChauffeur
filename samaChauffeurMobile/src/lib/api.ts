@@ -92,6 +92,7 @@ export const refreshTokenCall = (refresh: string) => api.post('/auth/token/refre
 export const getMe = () => api.get('/auth/me/');
 export const updateMe = (payload: Record<string, unknown>) => api.patch('/auth/me/', payload);
 export const logoutCall = (refresh: string) => api.post('/auth/logout/', { refresh });
+export const deleteAccount = () => api.delete('/auth/me/');
 
 // ---------- Chauffeurs ----------
 export const applyChauffeur = (vehicle: { type: string; seats: number; plate_number: string }) =>
@@ -100,6 +101,9 @@ export const getAvailableChauffeurs = (params?: { lat?: number; lng?: number; ra
   api.get('/chauffeurs/available/', { params });
 export const updateLocation = (latitude: number, longitude: number) => api.post('/chauffeurs/location/', { latitude, longitude });
 export const setChauffeurAvailability = (is_available: boolean) => api.post('/chauffeurs/availability/', { is_available });
+export const getChauffeurRatingSummary = (id: number) => api.get(`/chauffeurs/${id}/rating-summary/`);
+export const getMyChauffeurProfile = () => api.get('/chauffeurs/me/');
+export const updateChauffeurPhoto = (photo: string | null) => api.post('/chauffeurs/photo/', { photo });
 
 // ---------- Trips ----------
 export const createTrip = (payload: {
@@ -110,6 +114,9 @@ export const createTrip = (payload: {
   dest_lat?: number;
   dest_lng?: number;
   mode?: string;
+  vehicle_type?: string;
+  distance_km?: number;
+  payment_method?: string;
 }) => api.post('/trips/create/', payload);
 export const getAvailableTrips = () => api.get('/trips/available/');
 export const claimTrip = (id: number) => api.post(`/trips/claim/${id}/`);
@@ -119,6 +126,14 @@ export const acceptTrip = (id: number | string) => api.post(`/trips/${id}/accept
 export const rejectTrip = (id: number | string) => api.post(`/trips/${id}/reject/`);
 export const startTrip = (id: number | string) => api.post(`/trips/${id}/start/`);
 export const endTrip = (id: number | string) => api.post(`/trips/${id}/end/`);
+export const cancelTrip = (id: number | string) => api.post(`/trips/${id}/cancel/`);
+export const rateTrip = (id: number | string, rating: number, comment?: string) => api.post(`/trips/${id}/rate/`, { rating, comment });
+export const skipTripRating = (id: number | string) => api.post(`/trips/${id}/skip-rating/`);
+export const shareTrip = (id: number | string) => api.post(`/trips/${id}/share/`);
+export const triggerSos = (id: number | string, lat?: number, lng?: number) => api.post(`/trips/${id}/sos/`, { lat, lng });
+export const updateTripVehicleType = (id: number | string, vehicle_type: string) => api.post(`/trips/${id}/vehicle-type/`, { vehicle_type });
+export const updateTripPaymentMethod = (id: number | string, payment_method: string) => api.post(`/trips/${id}/payment-method/`, { payment_method });
+export const getRewardsStatus = () => api.get('/trips/rewards/');
 
 // ---------- Pricing ----------
 export const estimatePrice = (payload: { distance_km: number; vehicle_type: string; mode?: string; region?: string }) =>
@@ -130,6 +145,7 @@ export const updateClientProfile = (payload: Record<string, unknown>) => api.pat
 export const createSupportTicket = (payload: { title: string; description: string; trip?: number }) =>
   api.post('/clients/tickets/', payload);
 export const getClientPaymentMethods = () => api.get('/clients/payment-methods/');
+export const saveDiscountCode = (code: string) => api.post('/clients/promo-code/', { code });
 
 // ---------- Payments ----------
 export const getTransactions = () => api.get('/payments/transactions/');

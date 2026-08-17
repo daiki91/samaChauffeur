@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import * as Location from 'expo-location';
 import type { Socket } from 'socket.io-client';
 import {
   getMe,
@@ -82,16 +83,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Fire-and-forget presence heartbeat — no UI here, it just makes this user show up as
   // "online" to admins. Connects for any restored (app boot) or fresh (login) session.
+  //
+  // Also streams this device's position (throttled) over the same socket via 'location.update'
+  // — for ANY logged-in role, not just chauffeurs mid-trip. Mirrors AuthContext.tsx on the web
+  // app: it's what lets the admin "map" page show clients too, and fills in the user's last
+  // known spot once they go offline. Silently does nothing if location permission is denied —
+  // the presence heartbeat itself still works without it.
   useEffect(() => {
     if (!user) return;
     let active = true;
+    let subscription: Location.LocationSubscription | null = null;
+    const LOCATION_EMIT_THROTTLE_MS = 20_000;
+    let lastSentAt = 0;
     (async () => {
       const socket = await connectPresenceSocket();
       if (!socket || !active) return;
       presenceSocketRef.current = socket;
+
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status !== 'granted' || !active) return;
+        subscription = await Location.watchPositionAsync({ accuracy: Location.Accuracy.Low, timeInterval: LOCATION_EMIT_THROTTLE_MS, distanceInterval: 50 }, (pos) => {
+          const now = Date.now();
+          if (now - lastSentAt < LOCATION_EMIT_THROTTLE_MS) return;
+          lastSentAt = now;
+          socket.emit('location.update', { lat: pos.coords.latitude, lng: pos.coords.longitude });
+        });
+      } catch {
+        // permission denied/unavailable — presence heartbeat still works without it
+      }
     })();
     return () => {
       active = false;
+      subscription?.remove();
       presenceSocketRef.current?.disconnect();
       presenceSocketRef.current = null;
     };

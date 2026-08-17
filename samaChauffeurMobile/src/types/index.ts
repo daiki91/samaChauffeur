@@ -40,10 +40,17 @@ export type AvailableChauffeur = {
   longitude: number | null;
 };
 
+export type TripRating = {
+  rating: number;
+  comment: string | null;
+  skipped: boolean;
+};
+
 export type Trip = {
   id: number;
   passenger: number;
   driver: number | null;
+  driver_detail?: { id: number; username: string; phone: string } | null;
   origin: string;
   origin_lat: number | null;
   origin_lng: number | null;
@@ -53,11 +60,27 @@ export type Trip = {
   distance_km: number | null;
   estimated_duration: number | null;
   mode: TripMode;
+  vehicle_type?: VehicleType;
+  payment_method?: TransactionMethod;
   price: number | null;
+  discount_amount?: number | null;
   status: TripStatus;
+  rating?: TripRating | null;
   created_at: string;
   started_at: string | null;
   ended_at: string | null;
+};
+
+export type ChauffeurRatingSummary = { average: number | null; count: number };
+
+export type PendingDiscount = { pct: number; label: string } | null;
+
+export type RewardsStatus = {
+  total_distance_km: number;
+  last_checkpoint_km: number;
+  next_checkpoint_km: number;
+  pending_discount: PendingDiscount;
+  history: { km: number; discount_pct: number | null; created_at: string }[];
 };
 
 export type Transaction = {
@@ -93,6 +116,9 @@ export type ClientProfile = {
   is_active: boolean;
   language: Language;
   created_at: string;
+  referral_code?: string | null;
+  pending_promo_code?: string | null;
+  pending_promo_discount_pct?: number | null;
 };
 
 export type LatLng = { lat: number; lng: number };
