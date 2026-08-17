@@ -12,14 +12,6 @@ import { VEHICLE_TYPES } from '@/constants/config';
 import { colors, fonts, fontSizes, radii, shadows, spacing } from '@/constants/theme';
 import type { VehicleType } from '@/types';
 
-const ICONS: Record<VehicleType, keyof typeof Ionicons.glyphMap> = {
-  CAR: 'car-outline',
-  SEDAN: 'car-sport-outline',
-  SUV: 'bus-outline',
-  MINIBUS: 'subway-outline',
-  BUS: 'bus-outline',
-};
-
 export default function BecomeDriverScreen() {
   const { refreshMe, refreshChauffeurStatus } = useAuth();
   const [type, setType] = useState<VehicleType>('CAR');
@@ -56,7 +48,7 @@ export default function BecomeDriverScreen() {
         <View style={styles.typeGrid}>
           {VEHICLE_TYPES.map((opt) => (
             <Pressable key={opt.value} onPress={() => setType(opt.value)} style={[styles.typeOption, type === opt.value && styles.typeOptionActive]}>
-              <Ionicons name={ICONS[opt.value]} size={18} color={type === opt.value ? colors.brand[700] : colors.muted} />
+              <Ionicons name={opt.icon} size={18} color={type === opt.value ? colors.brand[700] : colors.muted} />
               <Text style={[styles.typeLabel, type === opt.value && { color: colors.brand[700] }]}>{opt.label}</Text>
             </Pressable>
           ))}

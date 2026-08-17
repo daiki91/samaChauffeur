@@ -13,7 +13,9 @@
         "NSLocationWhenInUseUsageDescription": "samaChauffeur utilise votre position pour vous proposer des chauffeurs proches et suivre vos courses.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "samaChauffeur utilise votre position, y compris en arrière-plan, pour vous transmettre des courses et permettre aux passagers de suivre votre trajet lorsque vous êtes en ligne.",
         "ITSAppUsesNonExemptEncryption": false,
-        "UIBackgroundModes": ["location"]
+        "UIBackgroundModes": [
+          "location"
+        ]
       },
       "bundleIdentifier": "com.daiki91.samaChauffeurMobile"
     },
@@ -66,7 +68,8 @@
         {
           "photosPermission": "samaChauffeur a besoin d'accéder à vos photos pour envoyer votre photo de profil et vos documents chauffeur."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,

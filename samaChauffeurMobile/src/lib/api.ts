@@ -83,8 +83,9 @@ api.interceptors.response.use(
 );
 
 // ---------- Auth ----------
-export const sendOtp = (phone: string) => api.post('/auth/otp/send/', { phone });
-export const verifyOtp = (phone: string, code: string) => api.post('/auth/otp/verify/', { phone, code });
+// OTP DISABLED — matches the web app (see Register.tsx there): registration goes straight to
+// login, no SMS verification step. sendOtp/verifyOtp removed; the backend endpoints still exist
+// if this ever needs to be re-enabled.
 export const registerUser = (payload: { username: string; phone: string; password: string; role: 'CLIENT' | 'CHAUFFEUR' }) =>
   api.post('/auth/register/', payload);
 export const login = (phone: string, password: string) => api.post('/auth/token/', { phone, password });
@@ -116,10 +117,12 @@ export const createTrip = (payload: {
   destination: string;
   dest_lat?: number;
   dest_lng?: number;
+  stops?: { label: string; lat?: number; lng?: number }[];
   mode?: string;
   vehicle_type?: string;
   distance_km?: number;
   payment_method?: string;
+  scheduled_at?: string;
 }) => api.post('/trips/create/', payload);
 export const getAvailableTrips = () => api.get('/trips/available/');
 export const claimTrip = (id: number) => api.post(`/trips/claim/${id}/`);

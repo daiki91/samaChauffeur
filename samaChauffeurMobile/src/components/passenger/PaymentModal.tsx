@@ -2,16 +2,9 @@ import React, { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Button from '@/components/ui/Button';
+import { PAYMENT_METHODS } from '@/constants/config';
 import { colors, fonts, fontSizes, radii, spacing } from '@/constants/theme';
 import type { Trip } from '@/types';
-
-const METHODS = [
-  { value: 'ORANGE', label: 'Orange Money', icon: 'phone-portrait-outline' as const },
-  { value: 'WAVE', label: 'Wave', icon: 'wallet-outline' as const },
-  { value: 'FREE', label: 'Free Money', icon: 'cash-outline' as const },
-  { value: 'CASH', label: 'Espèces', icon: 'cash' as const },
-  { value: 'CARD', label: 'Carte', icon: 'card-outline' as const },
-];
 
 type Props = {
   visible: boolean;
@@ -43,7 +36,7 @@ export default function PaymentModal({ visible, trip, onClose, onConfirm }: Prop
           <Text style={styles.title}>Payer la course</Text>
           <Text style={styles.amount}>{trip.price ?? 0} XOF</Text>
 
-          {METHODS.map((m) => (
+          {PAYMENT_METHODS.map((m) => (
             <Pressable key={m.value} style={[styles.methodRow, method === m.value && styles.methodRowActive]} onPress={() => setMethod(m.value)}>
               <Ionicons name={m.icon} size={18} color={method === m.value ? colors.brand[700] : colors.muted} />
               <Text style={[styles.methodLabel, method === m.value && { color: colors.brand[700] }]}>{m.label}</Text>

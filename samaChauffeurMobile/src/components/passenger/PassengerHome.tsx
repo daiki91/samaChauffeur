@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import PillBadge from '@/components/ui/PillBadge';
@@ -13,10 +14,16 @@ import { useLocation } from '@/hooks/useLocation';
 import { createTrip, estimatePrice, getAvailableChauffeurs, getClientProfile, getMyTrips, getRewardsStatus } from '@/lib/api';
 import { haversineKm } from '@/lib/geo';
 import { useAuth } from '@/context/AuthContext';
-import { colors, fonts, fontSizes, heroGradient, radii, spacing } from '@/constants/theme';
-import type { AvailableChauffeur, LatLng, PendingDiscount } from '@/types';
+import { PAYMENT_METHODS, VEHICLE_TYPES } from '@/constants/config';
+import { colors, fonts, fontSizes, heroGradient, radii, shadows, spacing } from '@/constants/theme';
+import type { AvailableChauffeur, LatLng, PendingDiscount, TransactionMethod, VehicleType } from '@/types';
 
 const ONGOING_STATUSES = ['REQUESTED', 'ASSIGNED', 'ACCEPTED', 'ARRIVED', 'STARTED'];
+const MAX_STOPS = 2;
+const MAP_EXPANDED_HEIGHT = 240;
+const MAP_COLLAPSED_HEIGHT = 110;
+
+type Stop = { id: string; label: string; point: LatLng | null };
 
 export default function PassengerHome() {
   const { user } = useAuth();
@@ -25,7 +32,17 @@ export default function PassengerHome() {
   const [destination, setDestination] = useState<LatLng | null>(null);
   const [destinationLabel, setDestinationLabel] = useState('');
   const [originLabel, setOriginLabel] = useState('Ma position actuelle');
-  const [estimate, setEstimate] = useState<{ price: number; distanceKm: number } | null>(null);
+  const [stops, setStops] = useState<Stop[]>([]);
+  // What the next map tap sets — the destination by default, or a specific stop while it's
+  // being placed. Keeps a single onPress handler working for every pickable point.
+  const [pendingTarget, setPendingTarget] = useState<'destination' | string>('destination');
+  const [mapExpanded, setMapExpanded] = useState(true);
+  const [vehicleType, setVehicleType] = useState<VehicleType>('CAR');
+  const [paymentMethod, setPaymentMethod] = useState<TransactionMethod>('CASH');
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [scheduledAt, setScheduledAt] = useState(() => new Date(Date.now() + 60 * 60 * 1000));
+  const [androidPickerStep, setAndroidPickerStep] = useState<'date' | 'time' | null>(null);
+  const [estimate, setEstimate] = useState<{ price: number; distanceKm: number; priceMin?: number; priceMax?: number } | null>(null);
   const [estimating, setEstimating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,18 +102,25 @@ export default function PassengerHome() {
     })();
   }, [user?.role]);
 
+  // Only feed complete stops (a point actually placed) into the route/estimate calculation —
+  // a stop row added but not yet placed on the map must not silently break things.
+  const stopPoints = useMemo(() => stops.map((s) => s.point).filter((p): p is LatLng => !!p), [stops]);
+  const stopsReady = stops.length === stopPoints.length;
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!position || !destination) {
+      if (!position || !destination || !stopsReady) {
         setEstimate(null);
         return;
       }
       setEstimating(true);
-      const distanceKm = haversineKm(position, destination);
+      const leg = [position, ...stopPoints, destination];
+      let distanceKm = 0;
+      for (let i = 0; i < leg.length - 1; i++) distanceKm += haversineKm(leg[i], leg[i + 1]);
       try {
-        const res = await estimatePrice({ distance_km: distanceKm, vehicle_type: 'CAR', mode: 'PRIVATE' });
-        if (!cancelled) setEstimate({ price: res.data.price, distanceKm });
+        const res = await estimatePrice({ distance_km: distanceKm, vehicle_type: vehicleType, mode: 'PRIVATE' });
+        if (!cancelled) setEstimate({ price: res.data.price, distanceKm, priceMin: res.data.price_min, priceMax: res.data.price_max });
       } catch {
         if (!cancelled) setEstimate(null);
       } finally {
@@ -106,21 +130,93 @@ export default function PassengerHome() {
     return () => {
       cancelled = true;
     };
-  }, [position, destination]);
+  }, [position, destination, stopPoints, stopsReady, vehicleType]);
 
   const markers: MapMarker[] = useMemo(
     () => [
       ...drivers
         .filter((d) => d.latitude != null && d.longitude != null)
         .map((d) => ({ id: `d-${d.id}`, position: { lat: d.latitude as number, lng: d.longitude as number }, color: colors.accent[600], label: d.username })),
+      ...stops
+        .filter((s) => s.point)
+        .map((s, i) => ({ id: `stop-${s.id}`, position: s.point as LatLng, color: colors.accent[600], label: s.label || `Arrêt ${i + 1}` })),
       ...(destination ? [{ id: 'dest', position: destination, color: colors.brand[600], label: destinationLabel || 'Destination' }] : []),
     ],
-    [drivers, destination, destinationLabel],
+    [drivers, destination, destinationLabel, stops],
   );
+
+  // Single handler for every map tap — routes the point to whichever pickable target is
+  // currently armed (the destination, or a specific stop being placed), then collapses the
+  // map back down so the growing form below isn't fighting a full-height map for space.
+  const handleMapPress = (point: LatLng) => {
+    if (pendingTarget === 'destination') {
+      setDestination(point);
+    } else {
+      const stopId = pendingTarget;
+      setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, point } : s)));
+      setPendingTarget('destination');
+    }
+    if (bookingOpen) setMapExpanded(false);
+  };
+
+  const editDestinationOnMap = () => {
+    setPendingTarget('destination');
+    setMapExpanded(true);
+  };
+
+  const addStop = () => {
+    if (stops.length >= MAX_STOPS) return;
+    const id = `${Date.now()}-${Math.random()}`;
+    setStops((prev) => [...prev, { id, label: '', point: null }]);
+    setPendingTarget(id);
+    setMapExpanded(true);
+  };
+
+  const placeStopOnMap = (id: string) => {
+    setPendingTarget(id);
+    setMapExpanded(true);
+  };
+
+  const removeStop = (id: string) => {
+    setStops((prev) => prev.filter((s) => s.id !== id));
+    if (pendingTarget === id) setPendingTarget('destination');
+  };
+
+  const updateStopLabel = (id: string, label: string) => {
+    setStops((prev) => prev.map((s) => (s.id === id ? { ...s, label } : s)));
+  };
+
+  const handleAndroidPickerChange = (_event: unknown, selected?: Date) => {
+    setAndroidPickerStep(null);
+    if (!selected) return;
+    if (androidPickerStep === 'date') {
+      const next = new Date(scheduledAt);
+      next.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
+      setScheduledAt(next);
+      setAndroidPickerStep('time');
+    } else {
+      const next = new Date(scheduledAt);
+      next.setHours(selected.getHours(), selected.getMinutes());
+      setScheduledAt(next);
+    }
+  };
+
+  // The exact "is this still in the future" check happens at submit time (handleConfirm) —
+  // Date.now() is impure and must not be called during render (React Compiler purity rule).
+  const scheduleReady = !scheduleEnabled || !!estimate;
+  const canRequest = !!position && !!destination && stopsReady && scheduleReady && !submitting;
 
   const handleConfirm = async () => {
     if (!position || !destination) {
       setError('Choisissez une destination sur la carte.');
+      return;
+    }
+    if (!canRequest) {
+      setError(scheduleReady ? 'Complétez tous les arrêts sur la carte.' : "Choisissez une date valide pour la course programmée.");
+      return;
+    }
+    if (scheduleEnabled && scheduledAt.getTime() <= Date.now()) {
+      setError('Choisissez une date et une heure dans le futur.');
       return;
     }
     setSubmitting(true);
@@ -133,7 +229,12 @@ export default function PassengerHome() {
         destination: destinationLabel || 'Destination sélectionnée',
         dest_lat: destination.lat,
         dest_lng: destination.lng,
+        stops: stops.map((s, i) => ({ label: s.label || `Arrêt ${i + 1}`, lat: s.point!.lat, lng: s.point!.lng })),
         mode: 'PRIVATE',
+        vehicle_type: vehicleType,
+        distance_km: estimate?.distanceKm,
+        payment_method: paymentMethod,
+        scheduled_at: scheduleEnabled ? scheduledAt.toISOString() : undefined,
       });
       router.push({ pathname: '/(app)/trip/[id]', params: { id: String(res.data.id) } });
     } catch (err: any) {
@@ -144,6 +245,15 @@ export default function PassengerHome() {
   };
 
   if (checkingActiveTrip) return <Spinner style={{ flex: 1 }} />;
+
+  const mapHint =
+    pendingTarget !== 'destination'
+      ? 'Touchez la carte pour placer cet arrêt'
+      : !destination
+        ? 'Touchez la carte pour choisir votre destination'
+        : mapExpanded
+          ? 'Touchez la carte pour modifier la destination'
+          : null;
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: colors.background }} showsVerticalScrollIndicator={false}>
@@ -174,8 +284,15 @@ export default function PassengerHome() {
       </LinearGradient>
 
       <View style={styles.mapSection}>
-        <MapPreview myPosition={position} markers={markers} onPress={(p) => setDestination(p)} height={240} />
-        <Text style={styles.mapHint}>Touchez la carte pour choisir votre destination</Text>
+        <View style={styles.mapWrap}>
+          <MapPreview myPosition={position} markers={markers} onPress={handleMapPress} height={mapExpanded ? MAP_EXPANDED_HEIGHT : MAP_COLLAPSED_HEIGHT} />
+          {bookingOpen && destination && (
+            <Pressable style={styles.mapToggleBtn} onPress={mapExpanded ? () => setMapExpanded(false) : editDestinationOnMap} hitSlop={6}>
+              <Ionicons name={mapExpanded ? 'contract-outline' : 'expand-outline'} size={16} color={colors.brand[700]} />
+            </Pressable>
+          )}
+        </View>
+        {mapHint && <Text style={styles.mapHint}>{mapHint}</Text>}
       </View>
 
       {bookingOpen && (
@@ -194,13 +311,84 @@ export default function PassengerHome() {
           />
           {!destination && <Text style={styles.hintText}>Touchez la carte ci-dessus pour placer votre destination.</Text>}
 
+          {stops.map((stop, i) => (
+            <View key={stop.id} style={styles.stopRow}>
+              <View style={{ flex: 1 }}>
+                <Input
+                  value={stop.label}
+                  onChangeText={(v) => updateStopLabel(stop.id, v)}
+                  placeholder={`Arrêt ${i + 1}`}
+                  icon={<Ionicons name="ellipse-outline" size={14} color={stop.point ? colors.secondary[600] : colors.muted} />}
+                />
+              </View>
+              <Pressable style={styles.stopIconBtn} onPress={() => placeStopOnMap(stop.id)} hitSlop={6}>
+                <Ionicons name={stop.point ? 'checkmark-circle' : 'location-outline'} size={20} color={stop.point ? colors.secondary[600] : colors.brand[600]} />
+              </Pressable>
+              <Pressable style={styles.stopIconBtn} onPress={() => removeStop(stop.id)} hitSlop={6}>
+                <Ionicons name="close" size={18} color={colors.muted} />
+              </Pressable>
+            </View>
+          ))}
+          {stops.length < MAX_STOPS && (
+            <Button variant="ghost" size="sm" onPress={addStop} icon={<Ionicons name="add" size={14} color={colors.brand[700]} />} style={{ alignSelf: 'flex-start', marginBottom: spacing.md }}>
+              Ajouter un arrêt
+            </Button>
+          )}
+
+          <Text style={styles.fieldLabel}>Véhicule</Text>
+          <View style={styles.pillRow}>
+            {VEHICLE_TYPES.map((opt) => (
+              <Pressable key={opt.value} onPress={() => setVehicleType(opt.value)} style={[styles.pill, vehicleType === opt.value && styles.pillActive]}>
+                <Ionicons name={opt.icon} size={14} color={vehicleType === opt.value ? colors.brand[700] : colors.muted} />
+                <Text style={[styles.pillText, vehicleType === opt.value && styles.pillTextActive]}>{opt.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <Text style={styles.fieldLabel}>Paiement</Text>
+          <View style={styles.pillRow}>
+            {PAYMENT_METHODS.map((opt) => (
+              <Pressable key={opt.value} onPress={() => setPaymentMethod(opt.value)} style={[styles.pill, paymentMethod === opt.value && styles.pillActive]}>
+                <Ionicons name={opt.icon} size={14} color={paymentMethod === opt.value ? colors.brand[700] : colors.muted} />
+                <Text style={[styles.pillText, paymentMethod === opt.value && styles.pillTextActive]}>{opt.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <View style={styles.scheduleRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>Programmer pour plus tard</Text>
+              <Text style={styles.fieldHint}>Sinon, un chauffeur est recherché immédiatement</Text>
+            </View>
+            <Switch value={scheduleEnabled} onValueChange={setScheduleEnabled} trackColor={{ false: colors.border, true: colors.secondary[400] }} thumbColor={colors.white} />
+          </View>
+
+          {scheduleEnabled &&
+            (Platform.OS === 'ios' ? (
+              <DateTimePicker value={scheduledAt} mode="datetime" display="inline" minimumDate={new Date()} onChange={(_e, d) => d && setScheduledAt(d)} style={{ marginBottom: spacing.md }} />
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  onPress={() => setAndroidPickerStep('date')}
+                  icon={<Ionicons name="calendar-outline" size={14} color={colors.brand[700]} />}
+                  style={{ marginBottom: spacing.md, alignSelf: 'flex-start' }}
+                >
+                  {scheduledAt.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                </Button>
+                {androidPickerStep === 'date' && <DateTimePicker value={scheduledAt} mode="date" display="default" minimumDate={new Date()} onChange={handleAndroidPickerChange} />}
+                {androidPickerStep === 'time' && <DateTimePicker value={scheduledAt} mode="time" display="default" onChange={handleAndroidPickerChange} />}
+              </>
+            ))}
+
           {nextRideDiscount && (
-            <View style={styles.discountBox}>
+            <Pressable style={styles.discountBox} onPress={() => router.push('/(app)/rewards')}>
               <Ionicons name="gift-outline" size={16} color={colors.secondary[700]} />
               <Text style={styles.discountText}>
                 Réduction de {nextRideDiscount.pct}% ({nextRideDiscount.label}) appliquée à cette course
               </Text>
-            </View>
+              <Ionicons name="chevron-forward" size={14} color={colors.secondary[700]} />
+            </Pressable>
           )}
 
           {estimating && <Spinner />}
@@ -210,14 +398,18 @@ export default function PassengerHome() {
                 <Ionicons name="speedometer-outline" size={14} color={colors.brand[700]} />
                 <Text style={styles.estimateText}>{estimate.distanceKm.toFixed(1)} km</Text>
               </View>
-              <Text style={styles.estimatePrice}>~{Math.round(estimate.price).toLocaleString('fr-FR')} XOF</Text>
+              <Text style={styles.estimatePrice}>
+                {estimate.priceMin != null && estimate.priceMax != null && estimate.priceMin !== estimate.priceMax
+                  ? `${Math.round(estimate.priceMin).toLocaleString('fr-FR')}–${Math.round(estimate.priceMax).toLocaleString('fr-FR')} XOF`
+                  : `~${Math.round(estimate.price).toLocaleString('fr-FR')} XOF`}
+              </Text>
             </View>
           )}
 
           {error && <Text style={styles.errorText}>{error}</Text>}
 
-          <Button fullWidth size="lg" onPress={handleConfirm} loading={submitting} disabled={!destination} style={{ marginTop: spacing.sm }}>
-            Confirmer la course
+          <Button fullWidth size="lg" onPress={handleConfirm} loading={submitting} disabled={!canRequest} style={{ marginTop: spacing.sm }}>
+            {scheduleEnabled ? 'Programmer la course' : 'Confirmer la course'}
           </Button>
         </Card>
       )}
@@ -277,6 +469,19 @@ const styles = StyleSheet.create({
     borderColor: colors.brand[600],
   },
   mapSection: { padding: spacing.xl, paddingBottom: spacing.md },
+  mapWrap: { position: 'relative' },
+  mapToggleBtn: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.sm,
+  },
   mapHint: { fontFamily: fonts.regular, fontSize: fontSizes.xs, color: colors.muted, marginTop: spacing.sm, textAlign: 'center' },
   // pulled up over the map + rounded top corners so it reads as a bottom-sheet, the pattern
   // Uber/Bolt/Yango/inDrive all use for the booking step instead of a plain inline form card
@@ -296,6 +501,25 @@ const styles = StyleSheet.create({
   },
   cardTitle: { fontFamily: fonts.semiBold, fontSize: fontSizes.md, color: colors.text, marginBottom: spacing.lg },
   hintText: { fontFamily: fonts.regular, fontSize: fontSizes.xs, color: colors.muted, marginTop: -spacing.sm, marginBottom: spacing.md },
+  stopRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  stopIconBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  fieldLabel: { fontFamily: fonts.medium, fontSize: fontSizes.sm, color: colors.text, marginBottom: spacing.sm },
+  fieldHint: { fontFamily: fonts.regular, fontSize: fontSizes.xs, color: colors.muted, marginTop: 2 },
+  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radii.pill,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  pillActive: { borderColor: colors.brand[500], backgroundColor: colors.brand[50] },
+  pillText: { fontFamily: fonts.medium, fontSize: fontSizes.xs, color: colors.muted },
+  pillTextActive: { color: colors.brand[700] },
+  scheduleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md },
   estimateBox: {
     flexDirection: 'row',
     justifyContent: 'space-between',

@@ -23,7 +23,7 @@ export default function RegisterScreen() {
     setError(null);
     try {
       await register({ username, phone, password, role: role as 'CLIENT' | 'CHAUFFEUR' });
-      router.push({ pathname: '/(auth)/phone', params: { phone } });
+      router.push({ pathname: '/(auth)/login', params: { phone } });
     } catch (err: any) {
       const data = err?.response?.data;
       setError(typeof data === 'string' ? data : data?.detail || 'Erreur lors de la création du compte');
@@ -36,7 +36,6 @@ export default function RegisterScreen() {
     <AuthLayout
       title="Créer un compte"
       subtitle="Rejoignez samaChauffeur en moins d'une minute."
-      step={{ current: 1, total: 3 }}
       footer={
         <Text style={{ fontFamily: fonts.regular, color: colors.muted }}>
           Déjà inscrit ?{' '}

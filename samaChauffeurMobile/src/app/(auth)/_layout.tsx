@@ -6,8 +6,6 @@ export default function AuthGroupLayout() {
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
       <Stack.Screen name="login" />
       <Stack.Screen name="register" />
-      <Stack.Screen name="phone" />
-      <Stack.Screen name="verify" />
     </Stack>
   );
 }

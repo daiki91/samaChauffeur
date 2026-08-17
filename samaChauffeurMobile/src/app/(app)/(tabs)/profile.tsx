@@ -195,6 +195,14 @@ export default function ProfileTab() {
       )}
 
       {user?.role === 'CLIENT' && (
+        <Card style={styles.linkRow} onPress={() => router.push('/(app)/rewards')}>
+          <Ionicons name="gift-outline" size={20} color={colors.brand[600]} />
+          <Text style={styles.linkText}>Mes cadeaux de route</Text>
+          <Ionicons name="chevron-forward" size={18} color={colors.muted} style={{ marginLeft: 'auto' }} />
+        </Card>
+      )}
+
+      {user?.role === 'CLIENT' && (
         <Card style={styles.linkRow} onPress={() => router.push('/(app)/become-driver')}>
           <Ionicons name="car-outline" size={20} color={colors.brand[600]} />
           <Text style={styles.linkText}>Devenir chauffeur</Text>
