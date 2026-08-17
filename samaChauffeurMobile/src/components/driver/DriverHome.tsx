@@ -1,20 +1,23 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import type { Socket } from 'socket.io-client';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Avatar from '@/components/ui/Avatar';
+import Spinner from '@/components/ui/Spinner';
 import MapPreview from '@/components/map/MapPreview';
 import { useLocation } from '@/hooks/useLocation';
 import { useAuth } from '@/context/AuthContext';
 import { connectDriverSocket } from '@/lib/socket';
 import { startBackgroundLocationTracking, stopBackgroundLocationTracking, setBackgroundLocationSocket } from '@/lib/backgroundLocation';
-import { getAvailableTrips, claimTrip, setChauffeurAvailability, updateLocation } from '@/lib/api';
+import { acceptTrip, claimTrip, getAvailableTrips, getMyActiveTrip, setChauffeurAvailability, updateLocation } from '@/lib/api';
 import { haversineKm } from '@/lib/geo';
 import { colors, fonts, fontSizes, radii, spacing } from '@/constants/theme';
 import type { Trip } from '@/types';
+
+const ACTIVE_STATUSES = ['ASSIGNED', 'ACCEPTED', 'ARRIVED', 'STARTED'];
 
 // Must match MAX_CLAIM_RADIUS_KM on the backend (backend-node/src/modules/trips/trips.routes.ts) —
 // a claim outside this radius is rejected server-side regardless, this just avoids a round-trip.
@@ -27,9 +30,34 @@ export default function DriverHome() {
   const [toggling, setToggling] = useState(false);
   const [trips, setTrips] = useState<Trip[]>([]);
   const [claimingId, setClaimingId] = useState<number | null>(null);
+  const [checkingActiveTrip, setCheckingActiveTrip] = useState(true);
   const socketRef = useRef<Socket | null>(null);
   const lastSent = useRef(0);
   const lastPosition = useRef<{ lat: number; lng: number } | null>(null);
+
+  // A driver reopening the app (or switching tabs) mid-course shouldn't land back on the
+  // available-trips list — send them straight to the course they already have in flight.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        try {
+          const r = await getMyActiveTrip();
+          if (!cancelled && r.data && ACTIVE_STATUSES.includes(r.data.status)) {
+            router.replace({ pathname: '/(app)/trip/[id]', params: { id: String(r.data.id) } });
+            return;
+          }
+        } catch {
+          // not verified yet, or no active trip — stay on the available-trips list
+        } finally {
+          if (!cancelled) setCheckingActiveTrip(false);
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
 
   const loadTrips = useCallback(async () => {
     try {
@@ -113,6 +141,7 @@ export default function DriverHome() {
     setClaimingId(id);
     try {
       await claimTrip(id);
+      await acceptTrip(id);
       setTrips((t) => t.filter((x) => x.id !== id));
       router.push({ pathname: '/(app)/trip/[id]', params: { id: String(id) } });
     } catch (err: any) {
@@ -133,12 +162,19 @@ export default function DriverHome() {
     });
   }, [trips, position]);
 
+  if (checkingActiveTrip) return <Spinner style={{ flex: 1 }} />;
+
   if (!chauffeur?.is_verified) {
     return (
       <View style={styles.pendingWrap}>
         <Ionicons name="hourglass-outline" size={40} color={colors.brand[300]} />
         <Text style={styles.pendingTitle}>Vérification en cours</Text>
         <Text style={styles.pendingText}>Votre profil chauffeur doit être vérifié par un administrateur avant de pouvoir passer en ligne.</Text>
+        {(!chauffeur?.permit || !chauffeur?.insurance) && (
+          <Button variant="outline" size="sm" onPress={() => router.push('/(app)/driver-documents')} style={{ marginTop: spacing.md }}>
+            Compléter mon dossier
+          </Button>
+        )}
       </View>
     );
   }

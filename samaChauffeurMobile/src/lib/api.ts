@@ -104,6 +104,9 @@ export const setChauffeurAvailability = (is_available: boolean) => api.post('/ch
 export const getChauffeurRatingSummary = (id: number) => api.get(`/chauffeurs/${id}/rating-summary/`);
 export const getMyChauffeurProfile = () => api.get('/chauffeurs/me/');
 export const updateChauffeurPhoto = (photo: string | null) => api.post('/chauffeurs/photo/', { photo });
+export const updateChauffeurDocuments = (permit: string | null, insurance: string | null) => api.post('/chauffeurs/documents/', { permit, insurance });
+/** "Espace chauffeur" stats — distance/earnings/trip count for a chosen date range. */
+export const getDriverStats = (from: string, to: string) => api.get('/chauffeurs/stats/', { params: { from, to } });
 
 // ---------- Trips ----------
 export const createTrip = (payload: {
@@ -124,8 +127,16 @@ export const getMyTrips = () => api.get('/trips/my/');
 export const getTripDetail = (id: number | string) => api.get(`/trips/${id}/`);
 export const acceptTrip = (id: number | string) => api.post(`/trips/${id}/accept/`);
 export const rejectTrip = (id: number | string) => api.post(`/trips/${id}/reject/`);
+/** The trip currently assigned to this driver (ASSIGNED/ACCEPTED/ARRIVED/STARTED), or null. */
+export const getMyActiveTrip = () => api.get('/trips/my-active/');
+/** Driver signals they've reached the pickup point, ahead of the passenger boarding. */
+export const arriveTrip = (id: number | string) => api.post(`/trips/${id}/arrived/`);
 export const startTrip = (id: number | string) => api.post(`/trips/${id}/start/`);
 export const endTrip = (id: number | string) => api.post(`/trips/${id}/end/`);
+/** Every trip this driver has ever driven, newest first. */
+export const getDriverHistory = () => api.get('/trips/driver-history/');
+/** Discreet in-ride SOS, triggered by the driver instead of the passenger. */
+export const triggerDriverSos = (tripId: number | string, lat?: number, lng?: number) => api.post(`/trips/${tripId}/sos/driver/`, { lat, lng });
 export const cancelTrip = (id: number | string) => api.post(`/trips/${id}/cancel/`);
 export const rateTrip = (id: number | string, rating: number, comment?: string) => api.post(`/trips/${id}/rate/`, { rating, comment });
 export const skipTripRating = (id: number | string) => api.post(`/trips/${id}/skip-rating/`);
@@ -158,5 +169,11 @@ export const getPaymentMethods = () => api.get('/payments/methods/');
 export const addPaymentMethod = (payload: { provider: string; details?: Record<string, unknown>; is_default?: boolean }) =>
   api.post('/payments/methods/', payload);
 export const deletePaymentMethod = (id: number) => api.delete(`/payments/methods/${id}/`);
+/** Lifetime earnings vs. already-claimed payouts — what's left the driver can withdraw. */
+export const getEarningsSummary = () => api.get('/payments/earnings/summary/');
+/** The driver's own payout/withdrawal history. */
+export const getMyPayouts = () => api.get('/payments/payouts/me/');
+/** Request a withdrawal of up to the available balance — starts out SCHEDULED until an admin processes it. */
+export const requestPayout = (amount: number, method?: string) => api.post('/payments/payouts/request/', { amount, method });
 
 export default api;

@@ -35,7 +35,7 @@ export default function BecomeDriverScreen() {
       await applyChauffeur({ type, seats: Number(seats) || 1, plate_number: plate });
       await refreshMe();
       await refreshChauffeurStatus();
-      router.replace('/(app)/(tabs)');
+      router.replace('/(app)/driver-documents');
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Erreur lors de la demande');
     } finally {

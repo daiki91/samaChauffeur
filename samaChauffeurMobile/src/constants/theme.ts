@@ -159,11 +159,14 @@ export const statusColors: Record<string, { bg: string; fg: string; label: strin
   REQUESTED: { bg: colors.accent[300], fg: colors.brand[800], label: 'Demandée' },
   ASSIGNED: { bg: colors.brand[100], fg: colors.brand[700], label: 'Assignée' },
   ACCEPTED: { bg: colors.brand[100], fg: colors.brand[700], label: 'Acceptée' },
+  ARRIVED: { bg: colors.brand[100], fg: colors.brand[700], label: 'Chauffeur arrivé' },
   STARTED: { bg: colors.secondary[100], fg: colors.secondary[700], label: 'En cours' },
   COMPLETED: { bg: colors.secondary[100], fg: colors.secondary[800], label: 'Terminée' },
   CANCELLED: { bg: colors.dangerBg, fg: colors.danger, label: 'Annulée' },
   PENDING: { bg: colors.accent[300], fg: colors.brand[800], label: 'En attente' },
   FAILED: { bg: colors.dangerBg, fg: colors.danger, label: 'Échouée' },
+  SCHEDULED: { bg: colors.accent[300], fg: colors.brand[800], label: 'En attente' },
+  PROCESSED: { bg: colors.secondary[100], fg: colors.secondary[800], label: 'Versé' },
 };
 
 /**
@@ -173,7 +176,7 @@ export const statusColors: Record<string, { bg: string; fg: string; label: strin
  */
 export const tripSteps: { key: string; label: string; icon: string; statuses: string[] }[] = [
   { key: 'REQUESTED', label: 'Demandée', icon: 'search-outline', statuses: ['REQUESTED'] },
-  { key: 'ASSIGNED', label: 'Chauffeur', icon: 'person-outline', statuses: ['ASSIGNED', 'ACCEPTED'] },
+  { key: 'ASSIGNED', label: 'Chauffeur', icon: 'person-outline', statuses: ['ASSIGNED', 'ACCEPTED', 'ARRIVED'] },
   { key: 'STARTED', label: 'En route', icon: 'navigate-outline', statuses: ['STARTED'] },
   { key: 'COMPLETED', label: 'Arrivée', icon: 'checkmark-done-outline', statuses: ['COMPLETED'] },
 ];

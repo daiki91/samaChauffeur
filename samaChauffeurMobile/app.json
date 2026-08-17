@@ -60,6 +60,12 @@
           "isAndroidBackgroundLocationEnabled": true,
           "isIosBackgroundLocationEnabled": true
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "samaChauffeur a besoin d'accéder à vos photos pour envoyer votre photo de profil et vos documents chauffeur."
+        }
       ]
     ],
     "experiments": {

@@ -2,7 +2,7 @@ export type Role = 'CLIENT' | 'CHAUFFEUR' | 'ADMIN';
 export type Language = 'fr' | 'wo';
 export type VehicleType = 'CAR' | 'SEDAN' | 'SUV' | 'MINIBUS' | 'BUS';
 export type TripMode = 'PRIVATE' | 'SHARED' | 'BUS';
-export type TripStatus = 'REQUESTED' | 'ASSIGNED' | 'ACCEPTED' | 'STARTED' | 'COMPLETED' | 'CANCELLED';
+export type TripStatus = 'REQUESTED' | 'ASSIGNED' | 'ACCEPTED' | 'ARRIVED' | 'STARTED' | 'COMPLETED' | 'CANCELLED';
 export type TransactionMethod = 'ORANGE' | 'WAVE' | 'FREE' | 'CASH' | 'CARD';
 export type TransactionStatus = 'PENDING' | 'COMPLETED' | 'FAILED';
 
@@ -28,7 +28,24 @@ export type Chauffeur = {
   vehicle: Vehicle | null;
   is_verified: boolean;
   is_available: boolean;
+  photo?: string | null;
+  permit?: string | null;
+  insurance?: string | null;
 };
+
+export type DriverStats = {
+  total_trips: number;
+  total_distance_km: number;
+  total_earnings: number;
+  average_price: number;
+  breakdown: { label: string; trips: number; distance_km: number; earnings: number }[];
+};
+
+export type EarningsSummary = { total_earnings: number; total_paid_out: number; available_balance: number };
+
+export type PayoutStatus = 'SCHEDULED' | 'PROCESSED' | 'FAILED';
+
+export type Payout = { id: number; amount: number; status: PayoutStatus; scheduled_at: string | null; processed_at: string | null };
 
 export type AvailableChauffeur = {
   id: number;

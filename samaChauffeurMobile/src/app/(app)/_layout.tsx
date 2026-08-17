@@ -23,6 +23,7 @@ export default function AppGroupLayout() {
       <Stack.Screen name="trip/[id]" options={{ presentation: 'card' }} />
       <Stack.Screen name="payment-methods" options={{ presentation: 'card' }} />
       <Stack.Screen name="become-driver" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="driver-documents" options={{ presentation: 'modal' }} />
     </Stack>
   );
 }

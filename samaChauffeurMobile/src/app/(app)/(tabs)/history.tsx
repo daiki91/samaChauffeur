@@ -1,16 +1,27 @@
-import React, { useCallback, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
+import Input from '@/components/ui/Input';
 import Spinner from '@/components/ui/Spinner';
 import PaymentModal from '@/components/passenger/PaymentModal';
 import { useAuth } from '@/context/AuthContext';
-import { getMyTrips, getPaymentsSummary, getPendingPaymentsForDriver, makePayment, validateTransaction } from '@/lib/api';
-import { colors, fonts, fontSizes, spacing } from '@/constants/theme';
-import type { PaymentsSummary, Trip } from '@/types';
+import {
+  getDriverStats,
+  getEarningsSummary,
+  getMyPayouts,
+  getMyTrips,
+  getPaymentsSummary,
+  getPendingPaymentsForDriver,
+  makePayment,
+  requestPayout,
+  validateTransaction,
+} from '@/lib/api';
+import { colors, fonts, fontSizes, radii, spacing } from '@/constants/theme';
+import type { DriverStats, EarningsSummary, Payout, PaymentsSummary, Trip } from '@/types';
 
 function PassengerHistory() {
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -88,9 +99,38 @@ function PassengerHistory() {
   );
 }
 
+type Preset = 'week' | 'month' | 'year';
+
+const PERIOD_OPTIONS: { value: Preset; label: string }[] = [
+  { value: 'week', label: 'Semaine' },
+  { value: 'month', label: 'Mois' },
+  { value: 'year', label: 'Année' },
+];
+
+// Simple rolling window ending now (no calendar-alignment or prev/next navigation, unlike the
+// web version's fuller period picker) — trades some precision for a much simpler mobile UI.
+function presetRangeIso(preset: Preset): { from: string; to: string } {
+  const to = new Date();
+  const from = new Date(to);
+  if (preset === 'week') from.setDate(from.getDate() - 7);
+  else if (preset === 'month') from.setMonth(from.getMonth() - 1);
+  else from.setFullYear(from.getFullYear() - 1);
+  return { from: from.toISOString(), to: to.toISOString() };
+}
+
 function DriverEarnings() {
   const [pending, setPending] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [preset, setPreset] = useState<Preset>('week');
+  const [stats, setStats] = useState<DriverStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+
+  const [earnings, setEarnings] = useState<EarningsSummary | null>(null);
+  const [payouts, setPayouts] = useState<Payout[]>([]);
+  const [payoutFormOpen, setPayoutFormOpen] = useState(false);
+  const [payoutAmount, setPayoutAmount] = useState('');
+  const [requestingPayout, setRequestingPayout] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -103,11 +143,40 @@ function DriverEarnings() {
     }
   }, []);
 
+  const refreshEarnings = useCallback(() => {
+    getEarningsSummary()
+      .then((r) => setEarnings(r.data))
+      .catch(() => {});
+    getMyPayouts()
+      .then((r) => setPayouts(r.data))
+      .catch(() => {});
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       load();
-    }, [load]),
+      refreshEarnings();
+    }, [load, refreshEarnings]),
   );
+
+  const { from, to } = useMemo(() => presetRangeIso(preset), [preset]);
+
+  useEffect(() => {
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- kicks off the period-scoped fetch
+    setStatsLoading(true);
+    getDriverStats(from, to)
+      .then((r) => {
+        if (!cancelled) setStats(r.data);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setStatsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [from, to]);
 
   const handleValidate = async (id: number) => {
     try {
@@ -118,11 +187,105 @@ function DriverEarnings() {
     }
   };
 
+  const handleRequestPayout = async () => {
+    const amount = Number(payoutAmount);
+    if (!amount || amount <= 0) return;
+    setRequestingPayout(true);
+    try {
+      await requestPayout(amount);
+      setPayoutAmount('');
+      setPayoutFormOpen(false);
+      refreshEarnings();
+    } catch (err: any) {
+      Alert.alert('Erreur', err?.response?.data?.detail || 'Erreur lors de la demande de retrait');
+    } finally {
+      setRequestingPayout(false);
+    }
+  };
+
   if (loading) return <Spinner style={{ flex: 1 }} />;
 
   return (
-    <ScrollView contentContainerStyle={styles.container} refreshControl={<RefreshControl refreshing={false} onRefresh={load} />}>
-      <Text style={styles.pageTitle}>Paiements en attente</Text>
+    <ScrollView contentContainerStyle={styles.container} refreshControl={<RefreshControl refreshing={false} onRefresh={() => { load(); refreshEarnings(); }} />}>
+      <Text style={styles.pageTitle}>Espace chauffeur</Text>
+
+      <View style={styles.periodRow}>
+        {PERIOD_OPTIONS.map((opt) => (
+          <Button key={opt.value} size="sm" variant={preset === opt.value ? 'primary' : 'outline'} onPress={() => setPreset(opt.value)}>
+            {opt.label}
+          </Button>
+        ))}
+      </View>
+
+      {statsLoading ? (
+        <Spinner />
+      ) : (
+        <View style={styles.statsGrid}>
+          <Card style={styles.statCard}>
+            <Text style={styles.statLabel}>Distance</Text>
+            <Text style={styles.statValue}>{(stats?.total_distance_km ?? 0).toLocaleString('fr-FR')} km</Text>
+          </Card>
+          <Card style={styles.statCard}>
+            <Text style={styles.statLabel}>Gagné</Text>
+            <Text style={[styles.statValue, { color: colors.secondary[700] }]}>{(stats?.total_earnings ?? 0).toLocaleString('fr-FR')} XOF</Text>
+          </Card>
+          <Card style={styles.statCard}>
+            <Text style={styles.statLabel}>Courses</Text>
+            <Text style={styles.statValue}>{stats?.total_trips ?? 0}</Text>
+          </Card>
+          <Card style={styles.statCard}>
+            <Text style={styles.statLabel}>Prix moyen</Text>
+            <Text style={styles.statValue}>{(stats?.average_price ?? 0).toLocaleString('fr-FR')} XOF</Text>
+          </Card>
+        </View>
+      )}
+
+      <Card style={{ marginTop: spacing.lg, marginBottom: spacing.lg }}>
+        <View style={styles.balanceHeaderRow}>
+          <Text style={styles.sectionTitle}>Solde & retraits</Text>
+          <Button size="sm" variant="outline" disabled={!earnings || earnings.available_balance <= 0} onPress={() => setPayoutFormOpen((v) => !v)}>
+            Retirer
+          </Button>
+        </View>
+        <View style={styles.balanceGrid}>
+          <View style={styles.balanceBox}>
+            <Text style={styles.statLabel}>Disponible</Text>
+            <Text style={[styles.statValue, { color: colors.secondary[700] }]}>{(earnings?.available_balance ?? 0).toLocaleString('fr-FR')} XOF</Text>
+          </View>
+          <View style={styles.balanceBox}>
+            <Text style={styles.statLabel}>Total gagné</Text>
+            <Text style={styles.statValue}>{(earnings?.total_earnings ?? 0).toLocaleString('fr-FR')} XOF</Text>
+          </View>
+          <View style={styles.balanceBox}>
+            <Text style={styles.statLabel}>Déjà retiré</Text>
+            <Text style={styles.statValue}>{(earnings?.total_paid_out ?? 0).toLocaleString('fr-FR')} XOF</Text>
+          </View>
+        </View>
+
+        {payoutFormOpen && (
+          <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start', marginTop: spacing.md }}>
+            <View style={{ flex: 1 }}>
+              <Input placeholder={`Max ${(earnings?.available_balance ?? 0).toLocaleString('fr-FR')}`} keyboardType="number-pad" value={payoutAmount} onChangeText={setPayoutAmount} />
+            </View>
+            <Button onPress={handleRequestPayout} loading={requestingPayout} disabled={!payoutAmount || Number(payoutAmount) <= 0}>
+              Envoyer
+            </Button>
+          </View>
+        )}
+
+        {payouts.length > 0 && (
+          <View style={{ marginTop: spacing.md }}>
+            {payouts.map((p) => (
+              <View key={p.id} style={styles.payoutRow}>
+                <Text style={styles.metaText}>{p.amount.toLocaleString('fr-FR')} XOF</Text>
+                <Badge status={p.status} />
+              </View>
+            ))}
+          </View>
+        )}
+      </Card>
+
+      <Text style={styles.sectionTitle}>Paiements en attente</Text>
       {pending.length === 0 && <Text style={styles.emptyText}>Aucun paiement en attente.</Text>}
       {pending.map((tx) => (
         <Card key={tx.id} style={styles.row} variant="outlined">
@@ -184,4 +347,14 @@ const styles = StyleSheet.create({
   },
   routeText: { fontFamily: fonts.medium, fontSize: fontSizes.sm, color: colors.text },
   metaText: { fontFamily: fonts.regular, fontSize: fontSizes.xs, color: colors.muted, marginTop: 2 },
+  periodRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  statCard: { flexBasis: '47%', flexGrow: 1 },
+  statLabel: { fontFamily: fonts.medium, fontSize: fontSizes.xs, color: colors.muted },
+  statValue: { fontFamily: fonts.bold, fontSize: fontSizes.lg, color: colors.text, marginTop: 2 },
+  sectionTitle: { fontFamily: fonts.semiBold, fontSize: fontSizes.md, color: colors.text, marginBottom: spacing.md },
+  balanceHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
+  balanceGrid: { flexDirection: 'row', gap: spacing.sm },
+  balanceBox: { flex: 1, backgroundColor: colors.background, borderRadius: radii.lg, padding: spacing.md },
+  payoutRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: spacing.xs },
 });

@@ -205,8 +205,16 @@ export default function ProfileTab() {
       {user?.role === 'CHAUFFEUR' && !chauffeur?.is_verified && (
         <Card style={{ backgroundColor: colors.accent[300] + '33', marginBottom: spacing.md }}>
           <Text style={styles.pendingText}>
-            <Ionicons name="hourglass-outline" size={14} /> Votre profil chauffeur est en attente de vérification par un administrateur.
+            <Ionicons name="hourglass-outline" size={14} />{' '}
+            {chauffeur?.permit && chauffeur?.insurance
+              ? 'Documents envoyés — en attente de vérification par notre équipe.'
+              : 'Profil incomplet — ajoutez vos documents pour être activé.'}
           </Text>
+          {(!chauffeur?.permit || !chauffeur?.insurance) && (
+            <Button variant="outline" size="sm" onPress={() => router.push('/(app)/driver-documents')} style={{ marginTop: spacing.sm, alignSelf: 'flex-start' }}>
+              Compléter mon dossier
+            </Button>
+          )}
         </Card>
       )}
 

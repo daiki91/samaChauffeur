@@ -16,7 +16,7 @@ import { useAuth } from '@/context/AuthContext';
 import { colors, fonts, fontSizes, heroGradient, radii, spacing } from '@/constants/theme';
 import type { AvailableChauffeur, LatLng, PendingDiscount } from '@/types';
 
-const ONGOING_STATUSES = ['REQUESTED', 'ASSIGNED', 'ACCEPTED', 'STARTED'];
+const ONGOING_STATUSES = ['REQUESTED', 'ASSIGNED', 'ACCEPTED', 'ARRIVED', 'STARTED'];
 
 export default function PassengerHome() {
   const { user } = useAuth();

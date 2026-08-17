@@ -17,8 +17,10 @@ import { useAuth } from '@/context/AuthContext';
 import { useLocation } from '@/hooks/useLocation';
 import {
   acceptTrip,
+  arriveTrip,
   cancelTrip,
   endTrip,
+  getPendingPaymentsForDriver,
   getTransactions,
   getTripDetail,
   makePayment,
@@ -27,14 +29,16 @@ import {
   shareTrip,
   skipTripRating,
   startTrip,
+  triggerDriverSos,
   triggerSos,
+  validateTransaction,
 } from '@/lib/api';
 import { connectDriversSocket, connectTripSocket } from '@/lib/socket';
 import { colors, fonts, fontSizes, spacing } from '@/constants/theme';
 import { EMERGENCY_PHONE, SHARE_BASE } from '@/constants/config';
 import type { LatLng, Trip } from '@/types';
 
-const ONGOING_STATUSES = ['REQUESTED', 'ASSIGNED', 'ACCEPTED', 'STARTED'];
+const ONGOING_STATUSES = ['REQUESTED', 'ASSIGNED', 'ACCEPTED', 'ARRIVED', 'STARTED'];
 
 export default function TripTrackingScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -50,6 +54,8 @@ export default function TripTrackingScreen() {
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
   const [sosSubmitting, setSosSubmitting] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [driverPendingPaymentId, setDriverPendingPaymentId] = useState<number | null>(null);
+  const [validatingPayment, setValidatingPayment] = useState(false);
   const tripSocketRef = useRef<Socket | null>(null);
   const driversSocketRef = useRef<Socket | null>(null);
 
@@ -83,6 +89,28 @@ export default function TripTrackingScreen() {
       .catch(() => {});
     return () => {
       cancelled = true;
+    };
+  }, [mode, trip?.status, id]);
+
+  // Driver side: poll for the passenger's payment on a completed trip so "Le passager a payé"
+  // enables itself as soon as one comes in, without a manual refresh.
+  useEffect(() => {
+    if (mode !== 'driver' || trip?.status !== 'COMPLETED') return;
+    let cancelled = false;
+    const check = () => {
+      getPendingPaymentsForDriver()
+        .then((r) => {
+          if (cancelled) return;
+          const mine = r.data.find((tx: any) => Number(tx.metadata?.trip_id) === Number(id));
+          setDriverPendingPaymentId(mine?.id ?? null);
+        })
+        .catch(() => {});
+    };
+    check();
+    const interval = setInterval(check, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
     };
   }, [mode, trip?.status, id]);
 
@@ -150,12 +178,25 @@ export default function TripTrackingScreen() {
   const handleSos = async () => {
     setSosSubmitting(true);
     try {
-      await triggerSos(id, myPosition?.lat, myPosition?.lng);
+      await (mode === 'driver' ? triggerDriverSos(id, myPosition?.lat, myPosition?.lng) : triggerSos(id, myPosition?.lat, myPosition?.lng));
     } catch {
       // best-effort — the emergency call below must go through regardless
     } finally {
       setSosSubmitting(false);
       Linking.openURL(`tel:${EMERGENCY_PHONE}`);
+    }
+  };
+
+  const handleValidatePayment = async () => {
+    if (!driverPendingPaymentId) return;
+    setValidatingPayment(true);
+    try {
+      await validateTransaction(driverPendingPaymentId);
+      setDriverPendingPaymentId(null);
+    } catch (err: any) {
+      Alert.alert('Erreur', err?.response?.data?.detail || 'Erreur lors de la validation du paiement');
+    } finally {
+      setValidatingPayment(false);
     }
   };
 
@@ -237,7 +278,15 @@ export default function TripTrackingScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.driverName}>{mode === 'driver' ? 'Passager' : 'Votre chauffeur'}</Text>
                   <Text style={styles.driverSub}>
-                    {trip.status === 'STARTED' ? 'Course en cours' : trip.status === 'COMPLETED' ? 'Course terminée' : 'En route vers vous'}
+                    {trip.status === 'STARTED'
+                      ? 'Course en cours'
+                      : trip.status === 'COMPLETED'
+                        ? 'Course terminée'
+                        : trip.status === 'ARRIVED'
+                          ? mode === 'driver'
+                            ? 'En attente du passager'
+                            : 'Votre chauffeur est arrivé'
+                          : 'En route vers vous'}
                   </Text>
                 </View>
               </View>
@@ -262,14 +311,34 @@ export default function TripTrackingScreen() {
           </View>
         )}
         {mode === 'driver' && trip.status === 'ACCEPTED' && (
-          <Button fullWidth size="lg" style={{ marginTop: spacing.lg }} onPress={() => runAction(() => startTrip(id))} loading={actionLoading}>
-            Démarrer la course
+          <Button fullWidth size="lg" icon={<Ionicons name="location" size={16} color={colors.white} />} style={{ marginTop: spacing.lg }} onPress={() => runAction(() => arriveTrip(id))} loading={actionLoading}>
+            Je suis arrivé
+          </Button>
+        )}
+        {mode === 'driver' && trip.status === 'ARRIVED' && (
+          <Button fullWidth size="lg" icon={<Ionicons name="person-add" size={16} color={colors.white} />} style={{ marginTop: spacing.lg }} onPress={() => runAction(() => startTrip(id))} loading={actionLoading}>
+            Client à bord
           </Button>
         )}
         {mode === 'driver' && trip.status === 'STARTED' && (
-          <Button fullWidth size="lg" variant="secondary" style={{ marginTop: spacing.lg }} onPress={() => runAction(() => endTrip(id))} loading={actionLoading}>
-            Terminer la course
+          <Button fullWidth size="lg" variant="secondary" icon={<Ionicons name="flag" size={16} color={colors.white} />} style={{ marginTop: spacing.lg }} onPress={() => runAction(() => endTrip(id))} loading={actionLoading}>
+            Arrivé à destination
           </Button>
+        )}
+        {mode === 'driver' && ['ASSIGNED', 'ACCEPTED', 'ARRIVED', 'STARTED'].includes(trip.status) && (
+          <Button variant="outline" fullWidth style={{ marginTop: spacing.md, borderColor: colors.danger }} onPress={handleSos} loading={sosSubmitting} icon={<Ionicons name="alert-circle-outline" size={16} color={colors.danger} />}>
+            SOS
+          </Button>
+        )}
+        {mode === 'driver' && trip.status === 'COMPLETED' && (
+          <Card style={{ marginTop: spacing.lg }}>
+            <Text style={styles.rateTitle}>Course terminée</Text>
+            <Text style={styles.metaText}>Moyen de paiement du client : {trip.payment_method ?? '—'}</Text>
+            {!driverPendingPaymentId && <Text style={[styles.metaText, { marginTop: spacing.xs }]}>En attente que le passager règle la course…</Text>}
+            <Button fullWidth style={{ marginTop: spacing.md }} variant="secondary" disabled={!driverPendingPaymentId} onPress={handleValidatePayment} loading={validatingPayment}>
+              Le passager a payé
+            </Button>
+          </Card>
         )}
 
         {mode === 'passenger' && ONGOING_STATUSES.includes(trip.status) && (
